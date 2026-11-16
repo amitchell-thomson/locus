@@ -146,7 +146,6 @@ def test_a_curriculum_keeps_only_what_its_evidence_holds(conn):
 
 def test_the_learning_screen_reads_the_curriculum_depth_first(conn):
     import json
-    import subprocess
 
     from locus.heuris import curriculum as C
 

@@ -98,6 +98,8 @@ pub struct App {
     pub fact_undo: Vec<crate::ui::approve::FactDecided>,
     /// When a mail decision last left for keryx: `u` undoes whichever kind came last.
     pub mail_decided_at: Option<std::time::Instant>,
+    /// Why the Learning screen could not be read from the server, if it could not (spec L).
+    pub learning_error: Option<String>,
     /// `/` on Approve: the list narrowed to lines with every word typed (10 Nov: "search
     /// should search and filter among approved, not be the general search").
     pub approve_filter: String,
@@ -162,6 +164,7 @@ impl App {
             approve_visual: None,
             fact_undo: Vec::new(),
             mail_decided_at: None,
+            learning_error: None,
             approve_filter: String::new(),
             approve_filtering: false,
             shown: RefCell::new(HashMap::new()),
@@ -226,6 +229,12 @@ impl App {
         self.home_live = true;
         self.fixtures.home.attended = None;
         self.fixtures.home.mail.need_reply = None;
+        // Learning's sample goals go too (spec L, L6): the server's arrive within a minute.
+        self.fixtures.learning = locus_contract::Learning {
+            goals: Vec::new(),
+            tracks: Vec::new(),
+            sheets: Vec::new(),
+        };
     }
 
     /// Back to Home with nothing open on it.

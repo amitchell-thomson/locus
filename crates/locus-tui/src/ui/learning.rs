@@ -38,6 +38,31 @@ fn confidence(conf: f32, width: usize) -> Vec<Span<'static>> {
     bar(conf, width, None, col)
 }
 
+/// A topic with no subtopics after it: only these count towards a goal's hours (a parent's
+/// hours are its children's sum).
+fn is_leaf(items: &[locus_contract::SyllabusItem], s: &locus_contract::SyllabusItem) -> bool {
+    let i = items.iter().position(|x| std::ptr::eq(x, s)).unwrap_or(0);
+    items.get(i + 1).is_none_or(|n| n.depth <= s.depth)
+}
+
+/// Words onto lines of at most `width` characters.
+fn wrap(text: &str, width: usize) -> Vec<String> {
+    let mut out = vec![String::new()];
+    for word in text.split_whitespace() {
+        let cur = out.last_mut().map_or(0, |l| l.chars().count());
+        if cur > 0 && cur + 1 + word.chars().count() > width.max(10) {
+            out.push(String::new());
+        }
+        if let Some(l) = out.last_mut() {
+            if !l.is_empty() {
+                l.push(' ');
+            }
+            l.push_str(word);
+        }
+    }
+    out
+}
+
 fn track<'a>(l: &'a Learning, id: &str) -> Option<&'a Track> {
     l.tracks.iter().find(|t| t.id == id)
 }
@@ -52,28 +77,47 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         Some(esc_back()),
     );
     let w = inner.width;
+    let focus = app.focus;
     let goals_h = l.goals.len().max(1) as u16 + 1;
     let sel_goal = l.goals.get(app.sel('g').min(l.goals.len().saturating_sub(1)));
-    let syl_h = sel_goal.map_or(0, |g| g.syllabus.len() as u16 + 2);
-    let [goals_r, syl_r, tracks_r, sheets_r, foot] = Layout::vertical([
+    // Tracks and sheets take room only once there is something in them (spec L: until marked
+    // practice exists, the curriculum is the screen).
+    let practised = l.tracks.iter().any(|t| t.confidence > 0.0 || !t.sessions.is_empty());
+    let tracks_h = if practised {
+        (l.tracks.len() as u16 + 1).min(6)
+    } else {
+        0
+    };
+    let sheets_h = if l.sheets.is_empty() {
+        0
+    } else {
+        (l.sheets.len() as u16 + 1).min(5)
+    };
+    let [goals_r, cur_r, detail_r, tracks_r, sheets_r, foot] = Layout::vertical([
         Constraint::Length(goals_h),
-        Constraint::Length(syl_h),
         Constraint::Min(4),
-        Constraint::Length(5),
+        Constraint::Length(4),
+        Constraint::Length(tracks_h),
+        Constraint::Length(sheets_h),
         Constraint::Length(1),
     ])
     .areas(inner);
 
-    let focus = app.focus;
     let mut out = vec![rule("goals", "", Some('g'), focus == Some('g'), w)];
     for (i, g) in l.goals.iter().enumerate() {
         let (state, col) = match g.state {
-            GoalState::Proposed => ("syllabus to agree", "peach"),
+            GoalState::Proposed => ("curriculum to agree", "peach"),
             GoalState::Active => ("active", "blue"),
             GoalState::Done => ("done", "green"),
         };
         let agreed = app.marked(&format!("goal:{}", g.id)) == Some(&Mark::Ticked);
-        let hours: f32 = g.syllabus.iter().map(|s| s.hours).sum();
+        let hours: f32 = g
+            .syllabus
+            .iter()
+            .filter(|s| is_leaf(&g.syllabus, s))
+            .map(|s| s.hours)
+            .sum::<f32>()
+            + 0.0;
         out.push(row(
             vec![
                 pointer(i, (focus == Some('g') || focus.is_none()).then(|| app.sel('g'))),
@@ -88,39 +132,98 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         ));
     }
     if l.goals.is_empty() {
-        out.push(Line::from(Span::styled("  no goals yet · n sets one", dim())));
+        let msg = match &app.learning_error {
+            Some(e) => format!("  could not read the goals: {e}"),
+            None if app.home_live => "  reading the goals from the server…".to_string(),
+            None => "  no goals yet · + sets one".to_string(),
+        };
+        out.push(Line::from(Span::styled(msg, dim())));
     }
     lines(f, goals_r, out);
 
+    // The curriculum: the selected goal's topics, depth first, scrolled to the cursor.
+    let fo = focus == Some('c');
+    let sel = app.sel('c');
+    let mut out = Vec::new();
     if let Some(g) = sel_goal {
-        let mut out = vec![rule(
-            "syllabus",
-            if g.state == GoalState::Proposed {
-                "y agrees · e changes"
-            } else {
-                ""
-            },
-            None,
-            false,
+        let right = g.pace.clone().unwrap_or_default();
+        out.push(rule(
+            "curriculum",
+            &crate::ui::truncate(&right, usize::from(w) / 2),
+            Some('c'),
+            fo,
             w,
-        )];
-        for (i, s) in g.syllabus.iter().enumerate() {
+        ));
+        let room = usize::from(cur_r.height.saturating_sub(1));
+        let start = if fo && sel >= room { sel + 1 - room } else { 0 };
+        for (i, s) in g.syllabus.iter().enumerate().skip(start).take(room) {
+            let indent = "  ".repeat(usize::from(s.depth));
             let conf = track(l, &s.track).map_or(0.0, |t| t.confidence);
-            let name = track(l, &s.track).map_or(s.track.clone(), |t| t.name.clone());
-            let mut spans = vec![
-                Span::styled(format!(" {}. ", i + 1), dim()),
-                Span::styled(format!("{:<22}", crate::ui::truncate(&name, 21)), text()),
+            let spans = vec![
+                pointer(i, fo.then_some(sel)),
+                Span::styled(
+                    format!(
+                        "{indent}{}",
+                        crate::ui::truncate(&s.what, usize::from(w).saturating_sub(40 + indent.len()))
+                    ),
+                    if s.depth == 0 { text() } else { dim() },
+                ),
             ];
-            spans.extend(confidence(conf, 8));
-            spans.push(Span::styled(format!(" {:>4.0} h  ", s.hours), text()));
-            spans.push(Span::styled(
-                crate::ui::truncate(&format!("{}{SEP}{}", s.what, s.from), usize::from(w).saturating_sub(45)),
-                dim(),
-            ));
-            out.push(Line::from(spans));
+            let right = vec![
+                Span::styled(format!("{} ", s.track.replace('-', " ")), dim()),
+                Span::styled(format!("{:>4.0} h ", s.hours), text()),
+            ];
+            let mut r = row(spans, right, w);
+            if conf > 0.0 {
+                r.spans.extend(confidence(conf, 6));
+            }
+            out.push(r);
         }
-        lines(f, syl_r, out);
+        if g.syllabus.is_empty() {
+            out.push(Line::from(Span::styled(
+                "  no curriculum yet: `locus learn propose` writes one",
+                dim(),
+            )));
+        }
     }
+    lines(f, cur_r, out);
+
+    // Why the selected topic is there, and the line of his material it rests on; the curriculum's
+    // summary when the cursor is elsewhere.
+    let mut out = Vec::new();
+    if let Some(g) = sel_goal {
+        let width = usize::from(w).saturating_sub(4);
+        match g.syllabus.get(sel).filter(|_| fo) {
+            Some(s) => {
+                if let Some(why) = &s.why {
+                    out.push(Line::from(Span::styled(
+                        format!("  {}", crate::ui::truncate(why, width)),
+                        text(),
+                    )));
+                }
+                if let Some(q) = &s.quote {
+                    out.push(Line::from(vec![
+                        Span::styled(
+                            format!(
+                                "  \u{201c}{}\u{201d} ",
+                                crate::ui::truncate(q, width.saturating_sub(16))
+                            ),
+                            st("lavender"),
+                        ),
+                        Span::styled(format!("[{}]", s.from), dim()),
+                    ]));
+                }
+            }
+            None => {
+                if let Some(sm) = &g.summary {
+                    for chunk in wrap(sm, width).into_iter().take(3) {
+                        out.push(Line::from(Span::styled(format!("  {chunk}"), dim())));
+                    }
+                }
+            }
+        }
+    }
+    lines(f, detail_r, out);
 
     let fo = focus == Some('t');
     let mut out = vec![rule("tracks", "confidence · history · misses open", Some('t'), fo, w)];
@@ -188,15 +291,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     lines(
         f,
         foot,
-        vec![
-            hints(&[
-                ("y", "agree"),
-                ("e", "change"),
-                ("+", "new goal"),
-                ("m", "make a sheet"),
-            ])
-            .right_aligned(),
-        ],
+        vec![hints(&[("c", "curriculum"), ("y", "agree"), ("e", "change"), ("+", "new goal")]).right_aligned()],
     );
 }
 
@@ -205,6 +300,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
     if let Some(d) = nav(&k) {
         let sec = app.focus.unwrap_or('g');
         let n = match sec {
+            'c' => l.goals.get(app.sel('g')).map_or(0, |g| g.syllabus.len()),
             't' => l.tracks.len(),
             's' => l.sheets.len().min(4),
             _ => l.goals.len(),
@@ -213,6 +309,22 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
         return true;
     }
     let goal = l.goals.get(app.sel('g')).cloned();
+    // Live (spec L), nothing is pretended: agreeing and changing go through the server's steps.
+    if app.home_live {
+        let msg = match k.code {
+            KeyCode::Char('y') => {
+                "agreeing a curriculum comes with step L3: it will make kairos tasks at the goal's pace"
+            }
+            KeyCode::Char('e') => {
+                "to change it, tell any Claude what to change; it re-proposes (`locus learn note`, then `propose`)"
+            }
+            KeyCode::Char('+') => "a new goal: tell any Claude what you want to learn and by when (`locus learn add`)",
+            KeyCode::Char('m') => "practice sheets come with step L4",
+            _ => return false,
+        };
+        app.note = Some(msg.into());
+        return true;
+    }
     match k.code {
         KeyCode::Char('y') => match goal {
             Some(g) if g.state == GoalState::Proposed => {

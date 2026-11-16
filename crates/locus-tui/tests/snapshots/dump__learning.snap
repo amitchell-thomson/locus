@@ -6,8 +6,25 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │─ goals ─────────────────────────────────────────────────────────────────────────────── [g] ─│
 │▌ 󰌵 personal learning                                                           2 h · active │
 │  󰌵 Jump Trading application                                                     25 h · done │
-│─ syllabus ──────────────────────────────────────────────────────────────────────────────────│
-│ 1. linear algebra        ━━━━────    2 h  both sides of the SVD without a separate eigen-…  │
+│─ curriculum ────────────────────────────────────────────────────────────────────────── [c] ─│
+│  both sides of the SVD without a separate eigen-solve…                linear algebra    2 h │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
 │                                                                                             │
 │─ tracks · confidence · history · misses open ───────────────────────────────────────── [t] ─│
 │  market microstructure   ━━──────────────  15%           no sessions                        │
@@ -15,28 +32,11 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │  backprop                ━━━━━━──────────  35%  ▃        no sessions                        │
 │  algorithms (LeetCode)   ━━━━━━━─────────  45%  ▃▄       1 session · 17 misses open         │
 │  data science            ━━━━━━━━────────  50%  ▅        no sessions · 3 misses open        │
-│  linear algebra          ━━━━━━━━━───────  55%  ▅▅       2 sessions · 7 misses open         │
-│  optimisation            ━━━━━━━━━━──────  60%  ▄▅       2 sessions · 2 misses open         │
-│  regression              ━━━━━━━━━━──────  60%  ▄▅       2 sessions · 6 misses open         │
-│  probability             ━━━━━━━━━━━━────  72%  ▃▅▅▆     6 sessions · 16 misses open        │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
 │─ practice sheets ───────────────────────────────────────────────────────────────────── [s] ─│
 │  󰴓 Jump sheet 7 · final light set              30 Sep · answered · waiting for the readback │
 │  󰴓 Jump sheet 6 · mixed, unlabelled                                  29 Sep · 6 of 23 right │
 │  󰴓 Jump sheet 5 · Markov chains, trees, SVD                          28 Sep · 3 of 12 right │
 │  󰴓 Jump sheet 4 · distributions, binary search, Lagrange             27 Sep · 6 of 15 right │
-│                                             y agree · e change · + new goal · m make a sheet│
+│                                               c curriculum · y agree · e change · + new goal│
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
  ⏎ open · ⇥ sections · l log · / ask · i chat · ? keys

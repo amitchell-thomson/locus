@@ -297,6 +297,8 @@ enum Live {
     System(Box<Result<locus_tui::live::SystemLive, String>>),
     /// The facts ledger's proposals and automatic writes (heuris H2.5).
     Facts(locus_tui::live::FactsLive),
+    /// Goals and curricula (spec L): the Learning screen, live.
+    Learning(Result<locus_contract::Learning, String>),
     Others(Vec<(String, Option<(locus_contract::Time, String)>)>),
 }
 
@@ -329,6 +331,13 @@ fn apply_live(app: &mut App, msg: Live) {
         }
         Live::System(s) => app.system_live = Some(*s),
         Live::Facts(f) => locus_tui::live::apply_facts(&mut app.fixtures, &f),
+        // Live, the sample goals go even before the first answer (C3: no sample data in a live
+        // window); a failed fetch keeps the last good one and says so on the screen.
+        Live::Learning(Ok(l)) => {
+            app.fixtures.learning = l;
+            app.learning_error = None;
+        }
+        Live::Learning(Err(e)) => app.learning_error = Some(e),
         Live::Others(o) => app.other_repos = o,
     }
 }
@@ -421,6 +430,9 @@ fn run(mut app: App) -> Result<()> {
                 if let Some(Ok(f)) = facts
                     && tx.send(Live::Facts(f)).is_err()
                 {
+                    return;
+                }
+                if slow && tx.send(Live::Learning(locus_tui::live::fetch_learning())).is_err() {
                     return;
                 }
                 // Every ten minutes: a git call per folder, for the projects view's last section.

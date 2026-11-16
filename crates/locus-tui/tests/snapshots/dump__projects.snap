@@ -2,9 +2,10 @@
 source: crates/locus-tui/tests/dump.rs
 expression: "dump::render(&a, 95, 38).unwrap()"
 ---
-╭ projects · 5 live ──────────────────────────────────────────────────────────────────────────╮
-│─ live · 5 ──────────────────────────────────────────────────────────────────────────────────│
+╭ projects · 6 live ──────────────────────────────────────────────────────────────────────────╮
+│─ live · 6 ──────────────────────────────────────────────────────────────────────────────────│
 │▌  󱓟 quast                     󰹇 needs you 35m  wants to run the full battery on… 2 sessions │
+│   󱓟 Learning                  󰤄 no sessions                                                 │
 │   󱓟 locus                     󰹇 needs you 20m  wants to restart the locus HTTP … 3 sessions │
 │   󱓟 OQTS                      󰤄 no sessions                                                 │
 │   󱓟 3YP                       󰤄 no sessions                                                 │
@@ -21,7 +22,6 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │─ running, not registered · none ────────────────────────────────────────────────────────────│
 │                                                                                             │
 │─ in ~/local-projects, not registered · none ────────────────────────────────────────────────│
-│                                                                                             │
 │                                                                                             │
 │                                                                                             │
 │                                                                                             │

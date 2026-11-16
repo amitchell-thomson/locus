@@ -23,9 +23,17 @@ pub struct Goal {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<NaiveDate>,
     pub state: GoalState,
-    /// The syllabus, shown before it starts (C.11): tracks in order, with time.
+    /// The syllabus, shown before it starts (C.11): tracks in order, with time. Live (spec L),
+    /// the curriculum's topics depth first, `depth` saying where each sits in the tree.
     #[serde(default)]
     pub syllabus: Vec<SyllabusItem>,
+    /// Whether it fits its date at its pace: "144 h in all; at 5 h a week: about 29 weeks, done
+    /// around 2027-06-05" (spec L, L-D7).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pace: Option<String>,
+    /// What the curriculum emphasises and why, in two or three sentences.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -44,8 +52,20 @@ pub struct SyllabusItem {
     /// What this part covers.
     pub what: String,
     pub hours: f32,
-    /// Where the material comes from: `your library`, `B1 ML course`.
+    /// Where the material comes from: `your library`, `B1 ML course`; live, the pointer of
+    /// the evidence it rests on (`src:623#s0`).
     pub from: String,
+    /// 0 for a top-level topic, 1 for its subtopics (spec L).
+    #[serde(default)]
+    pub depth: u8,
+    /// Why it is in the curriculum, and the line of his material it rests on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub why: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quote: Option<String>,
+    /// 0.5 to 3, weaker first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weight: Option<f32>,
 }
 
 /// A topic track: a confidence bar and its history (C.10).

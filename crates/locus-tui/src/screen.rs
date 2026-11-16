@@ -122,7 +122,12 @@ const SYSTEM: &[Section] = &[
     s('h', "recent", None),
     s('b', "usage", Some(S::Budget)),
 ];
-const LEARNING: &[Section] = &[s('g', "goals", None), s('t', "tracks", None), s('s', "sheets", None)];
+const LEARNING: &[Section] = &[
+    s('g', "goals", None),
+    s('c', "curriculum", None),
+    s('t', "tracks", None),
+    s('s', "sheets", None),
+];
 
 impl fmt::Display for ScreenId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

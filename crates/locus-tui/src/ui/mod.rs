@@ -73,11 +73,18 @@ pub fn section_len(app: &App, sec: char) -> usize {
     match app.screen() {
         ScreenId::Home => home::section_len(app, sec),
         ScreenId::System => system::section_len(app, sec),
-        ScreenId::Learning => match sec {
-            'g' => app.fixtures.learning.goals.len(),
-            't' => app.fixtures.learning.tracks.len(),
-            _ => app.fixtures.learning.sheets.len().min(4),
-        },
+        ScreenId::Learning => {
+            let l = &app.fixtures.learning;
+            match sec {
+                'g' => l.goals.len(),
+                // The selected goal's curriculum (spec L).
+                'c' => l.goals.get(app.sel('g')).map_or(0, |g| g.syllabus.len()),
+                // Tracks are drawn only once practice has moved one (learning::draw).
+                't' if l.tracks.iter().any(|t| t.confidence > 0.0 || !t.sessions.is_empty()) => l.tracks.len(),
+                't' => 0,
+                _ => l.sheets.len().min(4),
+            }
+        }
         _ => 1,
     }
 }

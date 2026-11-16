@@ -16,6 +16,7 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │─ personal projects ─────────────────────────────────────────────────────────────────── [p] ─│
 │   󰆤 quast    󰹇 needs you 35m  allow: python -m quast.battery --full ? · wants t… 2 sessions │
 │   󰆣 locus    󰹇 needs you 20m  allow: ssh compute-node 'systemctl --user restart… 3 sessions │
+│   󰆣 Learning 󰤄 no sessions    nothing yet                                                   │
 │   󰆣 OQTS     󰤄 no sessions    quiet since August                                            │
 │   󰆣 3YP      󰤄 no sessions    not started                                                   │
 │   󰆣 GR AI/ML 󰤄 no sessions    nothing yet                                                   │
@@ -30,7 +31,6 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │─ approve ──────────────────────────── [a] ──┬── tasks · + adds one ─────────────────── [t] ─│
 │   󰴹 5  2 mail to file · 1 mail to… 󰅸 2 new  │    󰄱 send HR signed employee form             │
 │     "G-Research sponsor talk" from care… 󰅸  │                                               │
-│     +4 more · ⏎ the approve page            │                                               │
 │                                                                                             │
 │─ system ────────────────────────────────────────────────────────────────────────────── [m] ─│
 │   running  󰓦 dossier quast   │   󰓦 scout reading   │   󰁪 chan… 󰄵 14 done today   󰅘 1 failed │

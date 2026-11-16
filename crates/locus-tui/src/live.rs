@@ -489,6 +489,12 @@ pub struct FactsLive {
 }
 
 /// The ledger, read from the server in one call (H2.5).
+/// The learning system's goals and curricula (spec L), in the screen's own contract.
+pub fn fetch_learning() -> Result<locus_contract::Learning, String> {
+    let said = server_locus(&["learn".into(), "export".into(), "--json".into()])?;
+    serde_json::from_str(&said).map_err(|e| format!("unreadable learning: {e}"))
+}
+
 pub fn fetch_facts() -> Result<FactsLive, String> {
     let said = server_locus(&["facts".into(), "queue".into(), "--json".into()])?;
     serde_json::from_str(&said).map_err(|e| format!("unreadable facts: {e}"))

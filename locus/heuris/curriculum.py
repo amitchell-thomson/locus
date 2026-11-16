@@ -281,6 +281,8 @@ def leaf_hours(conn: sqlite3.Connection, gid: str, *, state: str = "proposed") -
 def pace_line(goal: L.Goal, hours: float, today: date | None = None) -> str:
     """Whether the curriculum fits the date at the pace (L-D7)."""
     today = today or date.today()
+    if hours <= 0:
+        return "no curriculum yet"
     if not goal.pace:
         return f"{hours:g} h in all; no pace set"
     weeks = hours / goal.pace

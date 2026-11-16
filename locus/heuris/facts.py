@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS facts (
     as_of     TEXT NOT NULL,            -- YYYY-MM-DD: when it became true, or was stated
     sources   TEXT NOT NULL,            -- JSON list: pointers, or "you said so in chat ..."
     quote     TEXT,                     -- the sentence it rests on, verified in the source (D2)
-    route     TEXT NOT NULL,            -- chat, home, mail, calendar, import
+    route     TEXT NOT NULL,            -- chat, home, mail, calendar, import, syllabus
     status    TEXT NOT NULL,            -- current, replaced, retired, proposed, rejected
     replaces  INTEGER,                  -- the fact that was current when this one was written
     why       TEXT,                     -- why it waits in Approve
@@ -71,7 +71,10 @@ CREATE INDEX IF NOT EXISTS fact_log_at ON fact_log(at);
 """
 
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,47}$")
-ROUTES = ("chat", "home", "mail", "calendar", "import")
+# `syllabus`: the education facts P8 proposes from the department's syllabi. It was missing
+# here while `propose` checked no route, so all 17 waited in Approve and every approve was
+# refused (16 Nov). `propose` now checks the route too, so a proposal is approvable or refused.
+ROUTES = ("chat", "home", "mail", "calendar", "import", "syllabus")
 
 
 class FactError(ValueError):
@@ -310,6 +313,8 @@ def propose(conn: sqlite3.Connection, subject: str, slot: str, value: str, *, so
             why: str, as_of: str | date | None = None, quote: str | None = None) -> Written | None:
     """A fact for Approve. None when it is already true, already waiting, or he said no to it."""
     subject, slot = check_slot(subject, slot)
+    if route not in ROUTES:
+        raise FactError(f"route is one of {', '.join(ROUTES)}.")
     as_of = _as_of(as_of)
     cur = _current_one(conn, subject, slot)
     if cur and _norm_value(cur.value) == _norm_value(value):

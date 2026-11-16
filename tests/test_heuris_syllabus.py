@@ -113,6 +113,10 @@ def test_education_is_proposed_once_per_course_never_written(conn, tmp_path):
     assert row[:2] == ("me", "education:b14") and row[3] == "proposed"
     assert "Year 3 (Part B), 2026-27" in row[2] and "Signal Analysis" in row[2]
     assert syl.propose_education(conn, syl.read_all(tmp_path)).proposed == []
+    # and he can approve it (the route was once one the ledger refused to write)
+    from locus.heuris import facts as F
+    fid = conn.execute("SELECT id FROM facts WHERE status='proposed'").fetchone()[0]
+    assert F.approve(conn, fid).fact.status == "current"
 
 
 def test_not_yet_linked_is_not_uncovered_and_one_run_at_a_time(conn, tmp_path):

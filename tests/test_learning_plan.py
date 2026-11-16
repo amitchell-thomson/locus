@@ -13,6 +13,12 @@ from locus.heuris import learning_plan as LP
 D = date(2026, 11, 16)
 
 
+@pytest.fixture(autouse=True)
+def no_terms(monkeypatch):
+    """Never kairos's live constraints file: no terms, every day vacation (CLAUDE.md §9)."""
+    monkeypatch.setattr(L, "_terms_cache", [])
+
+
 @pytest.fixture
 def conn(tmp_path):
     c = hdb.connect(tmp_path / "h.db")
@@ -74,11 +80,13 @@ def test_approving_makes_one_task_per_leaf_topic_in_order_and_never_twice(conn):
     ids = _goal(conn)
     k = FakeKairos()
     r = LP.approve(conn, "interview-prep", kairos=k, today=D)
-    assert [w.title for w, _ in r.created] == ["EV", "Markov", "r^2 = R^2"]        # leaves only
-    posted = [c[2] for c in k.calls if c[1] == "/api/tasks"]
-    assert [p["estimate_min"] for p in posted] == [180, 420, 120]
-    assert all(p["key"] == "Careers" and p["create_deadline"] is False and p["plan"] is False for p in posted)
-    assert posted[0]["earliest_start"] == "2026-11-16" and posted[2]["earliest_start"] == "2026-11-26"
+    # leaves only, the two sections side by side: r^2 starts with EV, not after Markov
+    assert [w.title for w, _ in r.created] == ["EV", "r^2 = R^2", "Markov"]
+    posted = {c[2]["title"]: c[2] for c in k.calls if c[1] == "/api/tasks"}
+    assert {t: p["estimate_min"] for t, p in posted.items()} == {"EV": 180, "Markov": 420, "r^2 = R^2": 120}
+    assert all(p["key"] == "Careers" and p["create_deadline"] is False and p["plan"] is False for p in posted.values())
+    assert posted["EV"]["earliest_start"] == posted["r^2 = R^2"]["earliest_start"] == "2026-11-16"
+    assert posted["Markov"]["earliest_start"] == "2026-11-19"       # 3 h at 10/12 of an hour a day
     assert {c[3] for c in k.calls} == {"alec"}                        # he approved it
     assert [c[1] for c in k.calls].count("/api/plan") == 1            # one plan at the end
     assert L.get_goal(conn, "interview-prep").state == "active"
@@ -86,21 +94,23 @@ def test_approving_makes_one_task_per_leaf_topic_in_order_and_never_twice(conn):
     assert states == {"current"}
     again = LP.approve(conn, "interview-prep", kairos=k, today=D)
     assert again.created == [] and again.kept == 3 and len(k.tasks) == 3
-    assert LP.tasks_of(conn, "interview-prep")[ids["c"]] == "t3"
+    assert LP.tasks_of(conn, "interview-prep")[ids["c"]] == "t2"
 
 
 def test_a_pace_change_re_spreads_what_is_left_of_the_open_tasks(conn):
     _goal(conn)
     k = FakeKairos()
     LP.approve(conn, "interview-prep", kairos=k, today=D)
-    k.tasks["t1"]["status"] = "done"
-    k.tasks["t2"]["remaining_min"] = 210                                # half of Markov left
-    L.set_pace(conn, "interview-prep", 14, since=D)
+    by = {t["title"]: t for t in k.tasks.values()}
+    by["EV"]["status"] = "done"
+    by["Markov"]["remaining_min"] = 210                                 # half of Markov left
+    by["r^2 = R^2"]["remaining_min"] = 60
+    L.set_pace(conn, "interview-prep", 9, since=D)                     # 4.5 h left: 3.5 + 1
     n, _ = LP.respread(conn, "interview-prep", kairos=k, today=D)
     assert n == 2
-    assert k.tasks["t2"]["earliest_start"] == "2026-11-16" and k.tasks["t2"]["due"] == "2026-11-22"
-    assert k.tasks["t3"]["earliest_start"] == "2026-11-17"            # 3.5 h then 2 h at 2 h a day
-    assert "earliest_start" in k.tasks["t1"] and k.tasks["t1"]["earliest_start"] == "2026-11-16"   # untouched
+    # Markov's lane gets 3.5/4.5 of 9 h a week = 1 h a day: 3.5 days, stretched to a week
+    assert by["Markov"]["earliest_start"] == "2026-11-16" and by["Markov"]["due"] == "2026-11-22"
+    assert by["EV"]["due"] == "2026-11-22" and by["EV"]["status"] == "done"   # untouched
 
 
 def test_rejecting_keeps_the_current_curriculum_and_approving_replaces_it(conn):
@@ -123,3 +133,53 @@ def test_a_goal_needs_an_area_for_its_tasks(conn):
     with pytest.raises(L.LearningError, match="no area"):
         LP._area(conn, L.get_goal(conn, "loose"))
     assert L.set_area(conn, "loose", "Studies").area == "Studies"
+
+
+def test_term_and_vacation_paces_and_the_finish_they_give(conn):
+    terms = [(date(2026, 10, 4), date(2026, 12, 5)), (date(2027, 1, 10), date(2027, 3, 13))]
+    L.add_goal(conn, "g", "G", area="Careers")
+    L.set_pace(conn, "g", 5, since=D)                                   # the old flat pace
+    L.set_pace(conn, "g", 3, since=D, season="term")
+    L.set_pace(conn, "g", 7, since=D, season="vacation")
+    assert L.current_pace(conn, "g", date(2026, 11, 20), terms) == (3.0, None)
+    assert L.current_pace(conn, "g", date(2026, 12, 20), terms) == (7.0, None)
+    assert L.current_pace(conn, "g", date(2027, 2, 1), terms) == (3.0, None)
+    # a later flat pace overrides both seasons
+    L.set_pace(conn, "g", 4, since=date(2027, 4, 1))
+    assert L.current_pace(conn, "g", date(2027, 4, 2), terms) == (4.0, None)
+    on = L.pace_fn(conn, "g", terms)
+    # term at 3/7 h a day until 5 Dec (20 days, 8.6 h), then vacation at 1 h a day
+    assert L.finish(3, on, D) == date(2026, 11, 22)
+    assert L.finish(6, on, D) == date(2026, 11, 29)
+    assert L.finish(10, on, D) == date(2026, 12, 7)
+
+
+def test_sections_interleave_from_the_first_week():
+    leaves = [(1, "EV", 6), (2, "Markov", 6), (3, "Arrays", 6), (4, "Trees", 6)]
+    roots = {1: 10, 2: 10, 3: 20, 4: 20}
+    ws = LP.lanes(leaves, roots, lambda d: 7.0, D)
+    first = {w.title: w.start for w in ws}
+    assert first["EV"] == first["Arrays"] == D                        # both sections start at once
+    assert first["Markov"] == first["Trees"] == date(2026, 11, 28)    # each lane at half an hour a day
+
+
+def test_a_snapshot_from_before_a_column_restores_by_name(tmp_path):
+    import sqlite3
+
+    from locus import backup as bk
+
+    snap = tmp_path / "snap"
+    snap.mkdir()
+    old = sqlite3.connect(snap / "heuris-ledger.db")
+    old.executescript("CREATE TABLE goals (id TEXT PRIMARY KEY, title TEXT NOT NULL, master_by TEXT, "
+                      "state TEXT NOT NULL, priority INTEGER NOT NULL, thing TEXT, notes TEXT, "
+                      "created TEXT NOT NULL, changed TEXT NOT NULL);"
+                      "INSERT INTO goals VALUES ('quast', 'QUAST', NULL, 'proposed', 2, 'quast', 'little and often', "
+                      "'2026-11-16', '2026-11-16');")
+    old.commit()
+    old.close()
+    added = bk.restore_ledger(snap, tmp_path / "h.db")
+    assert added["goals"] == 1
+    c = hdb.connect(tmp_path / "h.db")
+    g = L.get_goal(c, "quast")
+    assert (g.thing, g.notes, g.area) == ("quast", "little and often", None)

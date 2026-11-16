@@ -126,7 +126,13 @@ def restore_ledger(snapshot: Path, heuris_db: Path) -> dict[str, int]:
                 if t not in have:
                     continue
                 before = conn.execute(f"SELECT COUNT(*) FROM main.{t}").fetchone()[0]
-                conn.execute(f"INSERT OR IGNORE INTO main.{t} SELECT * FROM snap.{t}")
+                # By name, never `SELECT *`: a column added later (goals.area, pace.season, L3)
+                # sits at the end of an older table and elsewhere in a new one, and a snapshot
+                # from before it has no such column at all.
+                main_cols = [r[1] for r in conn.execute(f"PRAGMA main.table_info({t})")]
+                snap_cols = {r[1] for r in conn.execute(f"PRAGMA snap.table_info({t})")}
+                cols = ", ".join(c for c in main_cols if c in snap_cols)
+                conn.execute(f"INSERT OR IGNORE INTO main.{t} ({cols}) SELECT {cols} FROM snap.{t}")
                 added[t] = conn.execute(f"SELECT COUNT(*) FROM main.{t}").fetchone()[0] - before
         conn.execute("DETACH DATABASE snap")
     finally:

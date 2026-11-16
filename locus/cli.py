@@ -369,20 +369,23 @@ def cmd_learn(args) -> None:
             elif a == "show":
                 g = L.get_goal(conn, args.goal)
                 print(L.describe(g))
-                for h, since, until, at, note in L.pace_history(conn, g.id):
-                    print(f"  pace {h:g} h a week from {since}" + (f" until {until}" if until else "")
+                for h, since, until, at, note, season in L.pace_history(conn, g.id):
+                    print(f"  pace {h:g} h a week" + (f" in {season}" if season else "") + f" from {since}"
+                          + (f" until {until}" if until else "")
                           + (f"  ({note})" if note else "") + f"  [set {at[:16]}]")
             elif a == "add":
                 g = L.add_goal(conn, args.goal, args.title or args.goal, master_by=args.by,
                                priority=args.priority, thing=args.thing, notes=args.note, area=args.area)
                 print(f"Added: {L.describe(g)}")
             elif a == "pace":
-                g = L.set_pace(conn, args.goal, float(args.value), since=args.since, until=args.until, note=args.note)
+                g = L.set_pace(conn, args.goal, float(args.value), since=args.since, until=args.until, note=args.note,
+                               season=args.season)
                 print(f"Pace: {L.describe(g)}")
                 if LP.tasks_of(conn, g.id):
                     n, summary = LP.respread(conn, g.id, kairos=_kairos)
                     print(f"Re-spread {n} open task(s). {summary}")
-                print(C.pace_line(g, C.leaf_hours(conn, g.id, state="current" if g.state == "active" else "proposed")))
+                print(C.pace_line(g, C.leaf_hours(conn, g.id, state="current" if g.state == "active" else "proposed"),
+                                  conn=conn))
             elif a == "state":
                 print(f"Now: {L.describe(L.set_state(conn, args.goal, args.value))}")
             elif a == "area":
@@ -1708,6 +1711,8 @@ def main(argv=None) -> None:
     ple.add_argument("--area", choices=["Studies", "Projects", "Careers"], help="add: its kairos tasks' key")
     ple.add_argument("--since", help="pace: from YYYY-MM-DD (default today)")
     ple.add_argument("--until", help="pace: until YYYY-MM-DD inclusive (a ramp that ends by itself)")
+    ple.add_argument("--season", choices=["term", "vacation"],
+                     help="pace: only on term days or only in vacations (term dates are kairos's)")
     ple.add_argument("--note", help="a note kept with it")
     ple.add_argument("--all", action="store_true", help="list: archived goals too")
     ple.add_argument("--json", action="store_true")

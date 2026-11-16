@@ -11,6 +11,12 @@ from locus.heuris import db as hdb
 from locus.heuris import learning as L
 
 
+@pytest.fixture(autouse=True)
+def no_terms(monkeypatch):
+    """Never kairos's live constraints file: no terms, every day vacation (CLAUDE.md §9)."""
+    monkeypatch.setattr(L, "_terms_cache", [])
+
+
 @pytest.fixture
 def conn(tmp_path):
     c = hdb.connect(tmp_path / "h.db")
@@ -137,7 +143,7 @@ def test_a_curriculum_keeps_only_what_its_evidence_holds(conn):
     out = C.render(conn, "interview-prep")
     assert "Data structures and algorithms" in out and "Deep learning" not in out
     assert "  - Trees" in out                                  # a subtopic under its parent
-    assert "30 h in all" in out and "6 weeks" in out           # leaf hours (trees 10 + prob 20) at 5 h a week
+    assert "30 h in all" in out and "at 5 h a week: done around" in out           # leaf hours (trees 10 + prob 20) at 5 h a week
     # a second proposal replaces the first proposed topics, never approved ones
     C.propose(conn, "interview-prep", refs=["src:614"], queries=["feedback"], ask=ask, embed=embed,
               rerank=lambda q, hits: hits, today=date(2026, 11, 16))
@@ -161,7 +167,7 @@ def test_the_learning_screen_reads_the_curriculum_depth_first(conn):
               embed=embed, rerank=lambda q, h: h)
     out = C.export(conn)
     [g] = out["goals"]
-    assert g["state"] == "proposed" and g["summary"] == "DSA first." and "about 6 weeks" in g["pace"]
+    assert g["state"] == "proposed" and g["summary"] == "DSA first." and "at 5 h a week: done around" in g["pace"]
     assert [(i["what"], i["depth"]) for i in g["syllabus"]] == [("DSA", 0), ("Trees", 1)]
     assert g["syllabus"][1]["quote"] == "Areas for growth - programming" and out["tracks"][0]["id"] == "data-structures"
     # the shape the Rust contract accepts (deny_unknown_fields): checked by the TUI's own test

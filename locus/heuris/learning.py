@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 import sqlite3
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS goals (
@@ -62,7 +62,8 @@ CREATE TABLE IF NOT EXISTS pace (
     since    TEXT NOT NULL,                -- YYYY-MM-DD
     until    TEXT,                         -- YYYY-MM-DD inclusive, or NULL: from then on
     set_at   TEXT NOT NULL,
-    note     TEXT
+    note     TEXT,
+    season   TEXT                          -- term, vacation, or NULL: every day
 );
 CREATE INDEX IF NOT EXISTS topics_goal ON topics(goal);
 CREATE INDEX IF NOT EXISTS pace_goal ON pace(goal, since);
@@ -83,6 +84,43 @@ def ensure(conn: sqlite3.Connection) -> None:
     # `area` came with L3 (16 Nov): a goal's tasks need a kairos key.
     if "area" not in {r[1] for r in conn.execute("PRAGMA table_info(goals)")}:
         conn.execute("ALTER TABLE goals ADD COLUMN area TEXT")
+    # `season` likewise (16 Nov: "less time during term ... higher during holidays").
+    if "season" not in {r[1] for r in conn.execute("PRAGMA table_info(pace)")}:
+        conn.execute("ALTER TABLE pace ADD COLUMN season TEXT")
+
+
+# --- term and vacation ---------------------------------------------------------------------------
+# The term dates are kairos's (`[[profiles]] name = "term"` in ~/.config/kairos/constraints.toml,
+# full term plus 0th week), so the scheduler and the pace agree on what term is. A day outside
+# them is vacation. No file (the laptop, a test) means no terms: every day is vacation, which
+# `describe` says rather than hides.
+SEASONS = ("term", "vacation")
+CONSTRAINTS = "~/.config/kairos/constraints.toml"
+_terms_cache: list[tuple[date, date]] | None = None
+
+
+def term_ranges() -> list[tuple[date, date]]:
+    global _terms_cache
+    if _terms_cache is None:
+        import tomllib
+        from pathlib import Path
+
+        out: list[tuple[date, date]] = []
+        try:
+            cfg = tomllib.loads(Path(CONSTRAINTS).expanduser().read_text())
+            for prof in cfg.get("profiles", []):
+                if prof.get("name") == "term":
+                    for r in prof.get("dates", []):
+                        out.append((date.fromisoformat(str(r["from"])), date.fromisoformat(str(r["to"]))))
+        except (OSError, ValueError, KeyError):
+            out = []
+        _terms_cache = out
+    return _terms_cache
+
+
+def season_of(d: date, terms: list[tuple[date, date]] | None = None) -> str:
+    terms = term_ranges() if terms is None else terms
+    return "term" if any(a <= d <= b for a, b in terms) else "vacation"
 
 
 def _now() -> str:
@@ -108,6 +146,7 @@ class Goal:
     area: str | None = None          # Studies, Projects or Careers (its kairos tasks' key)
     pace: float | None = None        # hours a week now
     pace_until: str | None = None    # when the current pace ends, if it does
+    seasons: dict | None = None      # {"term": 3.0, "vacation": 7.0} from today on
 
 
 def add_goal(conn: sqlite3.Connection, gid: str, title: str, *, master_by: str | date | None = None,
@@ -157,17 +196,59 @@ def set_state(conn: sqlite3.Connection, gid: str, state: str) -> Goal:
     return get_goal(conn, gid)
 
 
-def current_pace(conn: sqlite3.Connection, gid: str, on: date | None = None) -> tuple[float, str | None] | None:
-    """(hours a week, until) in force on `on` (today): the latest pace set whose window holds it."""
+def current_pace(conn: sqlite3.Connection, gid: str, on: date | None = None,
+                 terms: list[tuple[date, date]] | None = None) -> tuple[float, str | None] | None:
+    """(hours a week, until) in force on `on` (today): the latest pace set whose window holds it
+    and whose season, if it has one, is the season of that day."""
     ensure(conn)
-    d = (on or date.today()).isoformat()
+    day = on or date.today()
+    d = day.isoformat()
     r = conn.execute("SELECT hours, until FROM pace WHERE goal=? AND since<=? AND (until IS NULL OR until>=?) "
-                     "ORDER BY since DESC, id DESC LIMIT 1", (gid, d, d)).fetchone()
+                     "AND (season IS NULL OR season=?) ORDER BY since DESC, id DESC LIMIT 1",
+                     (gid, d, d, season_of(day, terms))).fetchone()
     return (float(r[0]), r[1]) if r else None
 
 
+def pace_fn(conn: sqlite3.Connection, gid: str, terms: list[tuple[date, date]] | None = None):
+    """The weekly pace on any day, cached: what the schedule and the finish date walk."""
+    cache: dict[date, float] = {}
+
+    def at(d: date) -> float:
+        if d not in cache:
+            p = current_pace(conn, gid, on=d, terms=terms)
+            cache[d] = p[0] if p else 0.0
+        return cache[d]
+    return at
+
+
+def finish(hours: float, pace_on, start: date, horizon_days: int = 3 * 365) -> date | None:
+    """The day `hours` are done, a day giving a seventh of that day's weekly pace; None if never."""
+    left, day = hours, start
+    while left > 1e-9:
+        left -= pace_on(day) / 7
+        if left <= 1e-9:
+            return day
+        day += timedelta(days=1)
+        if (day - start).days > horizon_days:
+            return None
+    return start
+
+
+def season_paces(conn: sqlite3.Connection, gid: str, on: date | None = None) -> dict[str, float]:
+    """The pace a term day and a vacation day get from `on` on, as now set (for the screen)."""
+    d = (on or date.today()).isoformat()
+    out = {}
+    for season in SEASONS:
+        r = conn.execute("SELECT hours FROM pace WHERE goal=? AND since<=? AND (until IS NULL OR until>=?) "
+                         "AND (season IS NULL OR season=?) ORDER BY since DESC, id DESC LIMIT 1",
+                         (gid, d, d, season)).fetchone()
+        if r:
+            out[season] = float(r[0])
+    return out
+
+
 def set_pace(conn: sqlite3.Connection, gid: str, hours: float, *, since: str | date | None = None,
-             until: str | date | None = None, note: str | None = None) -> Goal:
+             until: str | date | None = None, note: str | None = None, season: str | None = None) -> Goal:
     """Hours a week from `since` (today), until `until` (inclusive) or from then on. A window
     that ends returns the goal to the pace that held around it: "8 h until 10 Jan, then 5" is
     `set_pace(g, 5)` once and `set_pace(g, 8, until="2027-01-10")` for the ramp."""
@@ -177,16 +258,18 @@ def set_pace(conn: sqlite3.Connection, gid: str, hours: float, *, since: str | d
     s, u = _day(since) or date.today().isoformat(), _day(until)
     if u and u < s:
         raise LearningError("`until` is before `since`")
+    if season is not None and season not in SEASONS:
+        raise LearningError("season is term or vacation")
     with conn:
-        conn.execute("INSERT INTO pace(goal, hours, since, until, set_at, note) VALUES (?,?,?,?,?,?)",
-                     (gid, float(hours), s, u, _now(), note))
+        conn.execute("INSERT INTO pace(goal, hours, since, until, set_at, note, season) VALUES (?,?,?,?,?,?,?)",
+                     (gid, float(hours), s, u, _now(), note, season))
     return get_goal(conn, gid)
 
 
 def pace_history(conn: sqlite3.Connection, gid: str) -> list[tuple]:
     ensure(conn)
     return [tuple(r) for r in conn.execute(
-        "SELECT hours, since, until, set_at, note FROM pace WHERE goal=? ORDER BY id", (gid,))]
+        "SELECT hours, since, until, set_at, note, season FROM pace WHERE goal=? ORDER BY id", (gid,))]
 
 
 def get_goal(conn: sqlite3.Connection, gid: str) -> Goal:
@@ -200,6 +283,7 @@ def get_goal(conn: sqlite3.Connection, gid: str) -> Goal:
     p = current_pace(conn, gid)
     if p:
         g.pace, g.pace_until = p
+    g.seasons = season_paces(conn, gid) or None
     return g
 
 
@@ -211,7 +295,17 @@ def goals(conn: sqlite3.Connection, *, include_archived: bool = False) -> list[G
     return [get_goal(conn, i) for i in ids]
 
 
+def pace_words(g: Goal) -> str:
+    s = g.seasons or {}
+    if s.get("term") is not None and s.get("vacation") is not None and s["term"] != s["vacation"]:
+        words = f"{s['term']:g} h a week in term, {s['vacation']:g} in vacations"
+        return words + ("" if term_ranges() else " (no term dates found: every day counts as vacation)")
+    if g.pace is None:
+        return "no pace set"
+    return f"{g.pace:g} h a week" + (f" until {g.pace_until}" if g.pace_until else "")
+
+
 def describe(g: Goal) -> str:
-    pace = "no pace set" if g.pace is None else f"{g.pace:g} h a week" + (f" until {g.pace_until}" if g.pace_until else "")
+    pace = pace_words(g)
     by = f"by {g.master_by}" if g.master_by else "no hard date"
     return f"{g.id}  [{g.state}, priority {g.priority}]  {g.title}  ({by}; {pace})"

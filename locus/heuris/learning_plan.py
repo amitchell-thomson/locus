@@ -2,10 +2,20 @@
 
 **Approving** a goal's proposed curriculum makes its topics current (an earlier current curriculum
 is kept as `replaced`), the goal active, and gives every leaf topic a kairos task: the estimate is
-the topic's hours, and its window is where the topic falls when the curriculum is walked in order
-at the goal's pace. The window is the task's `earliest_start` and `due`, so kairos's scheduler
+the topic's hours, and its window is where the topic falls when the curriculum is walked at the
+goal's pace. The window is the task's `earliest_start` and `due`, so kairos's scheduler
 places the hours inside it and the weekly load is the pace, not everything at once. Nothing is
 hand-placed: one `plan` at the end puts the blocks in the calendar (the kairos rule).
+
+**The sections run side by side** (16 Nov: "definitely interleave"): each top-level section is a
+lane walked in its own order, at a share of the pace in proportion to its hours, so every week
+holds some probability, some coding, some statistics, and every lane ends together. Walked in tree
+order, all of probability came before any coding (seven weeks). Other goals are lanes of their
+own at their own pace, so their tasks interleave in the calendar the same way.
+
+**The pace follows term and vacation** (16 Nov: "less time during term ... higher during
+holidays"): the pace on each day is that day's season's (`learning.current_pace`), so a window
+that crosses into the vacation shortens by itself.
 
 **A window is at least a week** (`MIN_WINDOW_DAYS`): at 5 h a week a 2 h topic's exact share is
 under three days, and a due date that tight turns one busy evening into a shortfall. Windows
@@ -90,15 +100,32 @@ def windows(items: list[tuple[int, str, float]], pace_on: Callable[[date], float
     return out
 
 
-def _pace_fn(conn: sqlite3.Connection, gid: str) -> Callable[[date], float]:
-    cache: dict[date, float] = {}
+def lanes(leaves: list[tuple[int, str, float]], root_of: dict[int, int], pace_on: Callable[[date], float],
+          start: date) -> list[Window]:
+    """Windows with the sections side by side: `leaves` in curriculum order, `root_of` each one's
+    top-level section. A lane gets the pace times its share of the hours, so all lanes end
+    together. Returned in start order."""
+    by: dict[int, list[tuple[int, str, float]]] = {}
+    for t in leaves:
+        by.setdefault(root_of.get(t[0], t[0]), []).append(t)
+    total = sum(h for _, _, h in leaves) or 1.0
+    out: list[Window] = []
+    for items in by.values():
+        share = sum(h for _, _, h in items) / total
+        out += windows(items, lambda d, s=share: pace_on(d) * s, start)
+    order = {t[0]: i for i, t in enumerate(leaves)}
+    return sorted(out, key=lambda w: (w.start, order[w.topic]))
 
-    def at(d: date) -> float:
-        if d not in cache:
-            p = L.current_pace(conn, gid, on=d)
-            cache[d] = p[0] if p else 0.0
-        return cache[d]
-    return at
+
+def _roots(conn: sqlite3.Connection, gid: str) -> dict[int, int]:
+    parent = dict(conn.execute("SELECT id, parent FROM topics WHERE goal=?", (gid,)).fetchall())
+    out = {}
+    for t in parent:
+        r = t
+        while parent.get(r) is not None:
+            r = parent[r]
+        out[t] = r
+    return out
 
 
 def _leaves(conn: sqlite3.Connection, gid: str, state: str) -> list[tuple[int, str, float, str]]:
@@ -146,7 +173,7 @@ def plan_preview(conn: sqlite3.Connection, gid: str, *, today: date | None = Non
     g = L.get_goal(conn, gid)
     state = "proposed" if _leaves(conn, gid, "proposed") else "current"
     items = [(t, title, h) for t, title, h, _ in _leaves(conn, g.id, state)]
-    return windows(items, _pace_fn(conn, gid), today or date.today())
+    return lanes(items, _roots(conn, gid), L.pace_fn(conn, gid), today or date.today())
 
 
 def approve(conn: sqlite3.Connection, gid: str, *, kairos: Kairos, today: date | None = None) -> Approved:
@@ -165,7 +192,8 @@ def approve(conn: sqlite3.Connection, gid: str, *, kairos: Kairos, today: date |
     if g.state != "active":
         g = L.set_state(conn, gid, "active")
     have = {r[0] for r in conn.execute("SELECT topic FROM goal_tasks WHERE goal=?", (gid,))}
-    ws = windows([(t, title, h) for t, title, h, _ in leaves], _pace_fn(conn, gid), today or date.today())
+    ws = lanes([(t, title, h) for t, title, h, _ in leaves], _roots(conn, gid), L.pace_fn(conn, gid),
+               today or date.today())
     why = {t: w for t, _, _, w in leaves}
     created: list[tuple[Window, str]] = []
     for w in ws:
@@ -212,7 +240,7 @@ def respread(conn: sqlite3.Connection, gid: str, *, kairos: Kairos, today: date 
             continue
         items.append((topic, title, t["remaining_min"] / 60))
         ids[topic] = task_id
-    ws = windows(items, _pace_fn(conn, gid), today or date.today())
+    ws = lanes(items, _roots(conn, gid), L.pace_fn(conn, gid), today or date.today())
     for w in ws:
         kairos("PATCH", f"/api/tasks/{ids[w.topic]}",
                {"earliest_start": w.start.isoformat(), "due": w.due.isoformat(), "plan": False}, author="alec")

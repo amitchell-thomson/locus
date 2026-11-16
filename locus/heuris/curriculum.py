@@ -278,16 +278,23 @@ def leaf_hours(conn: sqlite3.Connection, gid: str, *, state: str = "proposed") -
     return float(r[0])
 
 
-def pace_line(goal: L.Goal, hours: float, today: date | None = None) -> str:
-    """Whether the curriculum fits the date at the pace (L-D7)."""
+def pace_line(goal: L.Goal, hours: float, today: date | None = None, *, conn: sqlite3.Connection | None = None) -> str:
+    """Whether the curriculum fits the date at the pace (L-D7). With `conn`, the finish walks the
+    real pace day by day (term and vacation, ramps); without, it assumes today's pace throughout."""
     today = today or date.today()
     if hours <= 0:
         return "no curriculum yet"
-    if not goal.pace:
-        return f"{hours:g} h in all; no pace set"
-    weeks = hours / goal.pace
-    done = today + timedelta(weeks=weeks)
-    line = f"{hours:g} h in all; at {goal.pace:g} h a week: about {weeks:.0f} weeks, done around {done.isoformat()}"
+    if conn is not None:
+        done = L.finish(hours, L.pace_fn(conn, goal.id), today)
+        if done is None:
+            return f"{hours:g} h in all; no pace set"
+        line = f"{hours:g} h in all; at {L.pace_words(goal)}: done around {done.isoformat()}"
+    else:
+        if not goal.pace:
+            return f"{hours:g} h in all; no pace set"
+        weeks = hours / goal.pace
+        done = today + timedelta(weeks=weeks)
+        line = f"{hours:g} h in all; at {goal.pace:g} h a week: about {weeks:.0f} weeks, done around {done.isoformat()}"
     if goal.master_by:
         by = date.fromisoformat(goal.master_by)
         line += (" (in time for " if done <= by else f" ({(done - by).days // 7} weeks after ") + f"{goal.master_by})"
@@ -304,7 +311,7 @@ def render(conn: sqlite3.Connection, gid: str, *, state: str = "proposed") -> st
     out = [L.describe(goal)]
     if cur:
         out.append(f"\nProposed {cur[2][:16].replace('T', ' ')}: {cur[0]}")
-    out.append(pace_line(goal, leaf_hours(conn, gid, state=state)))
+    out.append(pace_line(goal, leaf_hours(conn, gid, state=state), conn=conn))
     children: dict[int | None, list] = {}
     for r in rows:
         children.setdefault(r[1], []).append(r)
@@ -358,7 +365,7 @@ def export(conn: sqlite3.Connection) -> dict:
         walk(None, 0)
         cur = conn.execute("SELECT summary FROM curricula WHERE goal=? ORDER BY id DESC LIMIT 1", (g.id,)).fetchone()
         goal = {"id": g.id, "title": g.title, "state": state, "syllabus": items,
-                "pace": pace_line(g, leaf_hours(conn, g.id, state=tstate))}
+                "pace": pace_line(g, leaf_hours(conn, g.id, state=tstate), conn=conn)}
         if g.master_by:
             goal["by"] = g.master_by
         if cur:

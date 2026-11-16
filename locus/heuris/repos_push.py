@@ -64,7 +64,10 @@ def _walk(root: Path):
 
 # The H1 answer key and the spec whose progress notes quote found answers stay out of the index
 # while the test set is scored (H1.11): a scoring chat that found them would read the answers.
-HELD_OUT = {"docs/redesign/slices/h1-test-set.md", "docs/redesign/slices/h1-index-and-tools.md"}
+# H2's spec carries the H2.10 grading table with grader notes, and the Canvas spec Q31's run
+# notes: held out too (16 Nov), or a re-scoring chat reads its own marking.
+HELD_OUT = {"docs/redesign/slices/h1-test-set.md", "docs/redesign/slices/h1-index-and-tools.md",
+            "docs/redesign/slices/h2-what-is-true-now.md", "docs/redesign/slices/canvas-pull.md"}
 
 
 def docs(root: Path) -> list[Path]:

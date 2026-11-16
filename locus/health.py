@@ -230,6 +230,30 @@ def _unit_kind(unit: str) -> str:
     return unit.removeprefix("locus-").removesuffix(".service")
 
 
+def _systemd_ok_at(unit: str) -> str:
+    """When systemd last saw `unit` succeed, as ISO UTC ("" if unknown): a long-running service
+    is fine since it became active, a oneshot since its last clean finish. For units that never
+    journal a run (`http`, `public`, `heuris`, `heuris-derive`, `canvas`), whose failures stayed
+    "live" all day after many clean runs (16 Nov)."""
+    import subprocess
+    from datetime import datetime, timezone
+
+    try:
+        out = subprocess.run(["systemctl", "--user", "show", unit, "-p", "Result", "-p", "ActiveState",
+                              "-p", "ActiveEnterTimestamp", "-p", "InactiveEnterTimestamp", "--timestamp=unix"],
+                             capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    v = dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
+    if v.get("Result") != "success":
+        return ""
+    ts = v.get("ActiveEnterTimestamp") if v.get("ActiveState") == "active" else v.get("InactiveEnterTimestamp")
+    try:
+        return datetime.fromtimestamp(int((ts or "").lstrip("@")), timezone.utc).isoformat()
+    except ValueError:
+        return ""
+
+
 def _hard_failures(
     conn: sqlite3.Connection, *, since: str, latest_ok: dict[str, str] | None = None
 ) -> tuple[list[Problem], list[Problem]]:
@@ -261,7 +285,8 @@ def _hard_failures(
         problem = Problem(
             row["unit"], "broken", f"failed to start{times}{cause}", since=row["failed_at"] or "",
         )
-        if latest_ok.get(_unit_kind(row["unit"]), "") > (row["last_failed_at"] or ""):
+        ok_at = latest_ok.get(_unit_kind(row["unit"]), "") or _systemd_ok_at(row["unit"])
+        if ok_at > (row["last_failed_at"] or ""):
             recovered.append(problem)
         else:
             live.append(problem)

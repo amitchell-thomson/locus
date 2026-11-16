@@ -18,6 +18,9 @@ Environment=PATH=/home/alec/.local/bin:/usr/local/bin:/usr/bin:/bin
 EnvironmentFile=%h/.config/locus/http.env
 ExecStart=/bin/sh -c 'exec /home/alec/.local/bin/uv run --quiet locus serve --host "$(tailscale ip -4)" --port 7422'
 Restart=always
+# uv exits 143 on the SIGTERM of a restart: a deploy is not a failure (every deploy fired
+# OnFailure and `locus status` showed these units as broken, 16 Nov).
+SuccessExitStatus=143 SIGTERM
 RestartSec=5
 NoNewPrivileges=yes
 UMask=0077

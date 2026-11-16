@@ -276,6 +276,7 @@ class Applied:
     confirmed: int = 0
     dropped_quote: int = 0
     dropped_slot: int = 0
+    unreadable: int = 0
 
 
 def apply_facts(conn: sqlite3.Connection, msgs: list[Message], raw: str, *, gate_conn=None) -> Applied:
@@ -286,6 +287,7 @@ def apply_facts(conn: sqlite3.Connection, msgs: list[Message], raw: str, *, gate
     try:
         items = json.loads(raw).get("facts", [])
     except (ValueError, AttributeError):
+        st.unreadable = 1     # cut off or not JSON: the thread is read again (16 Nov)
         return st
     for x in items[:8]:
         try:
@@ -439,10 +441,29 @@ def collect(conn: sqlite3.Connection, job: str, apply) -> int:
                 conn.execute("UPDATE batches SET applied=0 WHERE id=?", (bid,))
             continue
         meta = json.loads(items)
+        failed: list[str] = []
         for cid, r in res.items():
-            if isinstance(r, claude.ClaudeResult):
-                apply(cid, meta.get(cid), r.text)
-                n += 1
+            if not isinstance(r, claude.ClaudeResult):
+                failed.append(cid)        # errored, expired or refused: read again (16 Nov)
+                continue
+            # One result that raises must not strand the rest of the batch at applied=2, nor
+            # abort the run's records and briefs (16 Nov).
+            try:
+                if apply(cid, meta.get(cid), r.text) is False:
+                    failed.append(cid)
+                else:
+                    n += 1
+            except Exception as e:  # noqa: BLE001
+                import logging
+
+                logging.getLogger("locus.heuris").warning("derive %s: applying %s failed: %s", job, cid, e)
+                failed.append(cid)
+        if job == "facts" and failed:
+            # A thread whose read failed is read again: it was marked read when it was submitted.
+            with conn:
+                for cid in failed:
+                    if isinstance(thread := meta.get(cid), str):
+                        conn.execute("DELETE FROM fact_reads WHERE thread=?", (thread,))
         with conn:
             conn.execute("UPDATE batches SET ended=?, applied=1 WHERE id=?", (_now(), bid))
     return n
@@ -476,6 +497,7 @@ def run_facts(conn: sqlite3.Connection, *, since: str = SINCE_DEFAULT, limit: in
         a = apply_facts(conn, msgs, text, gate_conn=gate_conn)
         for k in vars(a):
             setattr(rep.applied, k, getattr(rep.applied, k) + getattr(a, k))
+        return False if a.unreadable else None
 
     rep.collected = collect(conn, "facts", apply)
     rep.calendar = calendar_facts(conn, since=since)

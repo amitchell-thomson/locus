@@ -21,6 +21,9 @@ EnvironmentFile=%h/.config/locus/public.env
 ExecStartPre=/usr/bin/tailscale funnel --bg --https=443 http://127.0.0.1:7423
 ExecStart=/home/alec/.local/bin/uv run --quiet locus serve-public --port 7423
 Restart=always
+# uv exits 143 on the SIGTERM of a restart: a deploy is not a failure (every deploy fired
+# OnFailure and `locus status` showed these units as broken, 16 Nov).
+SuccessExitStatus=143 SIGTERM
 RestartSec=5
 NoNewPrivileges=yes
 UMask=0077

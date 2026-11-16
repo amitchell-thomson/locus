@@ -402,25 +402,35 @@ def _heuris_derive(conn, args) -> None:
     jobs = args.jobs or ["facts", "records", "briefs"]
     gate_conn = get_connection(_load().paths.db)
     try:
+        errors: list[str] = []
+
+        def step(name: str, fn):
+            # Each job on its own: one that raises no longer skips the others (16 Nov). The run
+            # still fails at the end, so systemd records it.
+            try:
+                return fn()
+            except Exception as e:  # noqa: BLE001
+                import traceback
+
+                traceback.print_exc()
+                errors.append(f"{name}: {type(e).__name__}: {e}")
+                return None
+
         def once(submit_new: bool) -> bool:
             did = False
-            if "facts" in jobs:
-                with usage.job("heuris-facts"):
-                    r = derive.run_facts(conn, since=args.since, limit=args.limit, force=args.force,
-                                         gate_conn=gate_conn, submit_new=submit_new)
-                if submit_new or r.collected:
-                    print(r.describe())
-                did |= bool(r.collected)
-            if "records" in jobs:
-                with usage.job("heuris-records"):
-                    r = records.run_records(conn, since=args.since, limit=args.limit, force=args.force,
-                                            submit_new=submit_new)
-                if submit_new or r.collected:
-                    print(r.describe())
-                did |= bool(r.collected)
-            if "briefs" in jobs:
-                with usage.job("heuris-briefs"):
-                    r = briefs.run_briefs(conn, force=args.force, submit_new=submit_new)
+            for name, fn in (
+                ("facts", lambda: derive.run_facts(conn, since=args.since, limit=args.limit, force=args.force,
+                                                   gate_conn=gate_conn, submit_new=submit_new)),
+                ("records", lambda: records.run_records(conn, since=args.since, limit=args.limit, force=args.force,
+                                                        submit_new=submit_new)),
+                ("briefs", lambda: briefs.run_briefs(conn, force=args.force, submit_new=submit_new)),
+            ):
+                if name not in jobs:
+                    continue
+                with usage.job(f"heuris-{name}"):
+                    r = step(name, fn)
+                if r is None:
+                    continue
                 if submit_new or r.collected:
                     print(r.describe())
                 did |= bool(r.collected)
@@ -430,6 +440,8 @@ def _heuris_derive(conn, args) -> None:
         while args.wait and conn.execute("SELECT COUNT(*) FROM batches WHERE applied=0").fetchone()[0]:
             _time.sleep(30)
             once(False)
+        if errors:
+            raise SystemExit("derive: " + "; ".join(errors))
     finally:
         gate_conn.close()
 

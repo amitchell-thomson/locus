@@ -169,7 +169,9 @@ def _replace_existing(
     Every other case, including every case where the remote could not be inspected, keeps the old
     `--content-only` behaviour. Stale metadata is recoverable; his handwriting is not.
     """
-    device_path = f"{remote_folder.rstrip('/')}/{pdf_path.name}"
+    # rmapi names an uploaded document by its STEM: with `.pdf` the inspect never found it and
+    # every replace fell back to --content-only, so this repair never ran (found 16 Nov).
+    device_path = f"{remote_folder.rstrip('/')}/{pdf_path.stem}"
     existing = inspect(device_path)
     new_pages = _pdf_page_count(pdf_path)
 

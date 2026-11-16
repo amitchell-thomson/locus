@@ -397,7 +397,7 @@ def test_a_page_count_change_with_no_ink_is_deleted_and_reput(tmp_path: Path):
                          inspect=_remote(ok=True, page_count=9, has_ink=False))
 
     assert result.replaced == "delete+put"
-    assert ["rm", "Inbox/rebuilt.pdf"] in fake.calls
+    assert ["rm", "Inbox/rebuilt"] in fake.calls
     assert not any("--content-only" in c for c in fake.calls)
 
 

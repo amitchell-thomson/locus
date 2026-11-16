@@ -201,3 +201,31 @@ def test_his_goal_leads_the_unfiltered_context_and_his_facts_are_whole(conn):
     out = ht.facts_block(conn)
     me = out.split("[me]:")[1]
     assert me.index("goal:long-term-role") < me.index("achievement:a0") and "more: facts(subject=\"me\")" not in out
+
+
+def _now(conn, subject, slot):
+    [f] = F.current(conn, subject, slot)
+    return f.value
+
+
+def test_a_decided_proposal_goes_back_to_approve_and_an_approval_is_taken_back(conn):
+    # 16 Nov: "either way yes or no should put it back in the list so I can change my answer"
+    F.write(conn, "jump", "stage", "applied", sources=SRC, route="chat", as_of="2026-10-01")
+    p = F.propose(conn, "jump", "stage", "offer", sources=SRC, route="mail", why="x", as_of="2026-10-20")
+    F.approve(conn, p.fact.id)
+    assert _now(conn, "jump", "stage") == "offer"
+    back, taken = F.reopen(conn, p.fact.id)
+    assert back.status == "proposed" and taken.value == "offer" and taken.status == "retired"
+    assert _now(conn, "jump", "stage") == "applied"          # what it replaced, restored
+    F.reject(conn, p.fact.id)
+    back, taken = F.reopen(conn, p.fact.id)
+    assert back.status == "proposed" and taken is None
+    F.approve(conn, p.fact.id)                                           # and he can answer again
+    assert _now(conn, "jump", "stage") == "offer"
+    # an approval that only confirmed what was already true takes nothing back
+    q = F.propose(conn, "me", "location", "Oxford", sources=SRC, route="mail", why="x")
+    F.write(conn, "me", "location", "Oxford", sources=SRC, route="chat")
+    F.approve(conn, q.fact.id)
+    assert F.reopen(conn, q.fact.id)[1] is None and _now(conn, "me", "location") == "Oxford"
+    with pytest.raises(F.FactError):
+        F.reopen(conn, q.fact.id + 1000)

@@ -675,7 +675,15 @@ fn shell_quote(s: &str) -> String {
 
 /// Run `locus <args>` on the server and return what it printed (H2.3: the Home chat's `y`
 /// records a fact there, where the ledger lives). The error is the last line it printed.
+/// Tests stand in for the server here (a window never sets it): every `server_locus` call goes
+/// to this function instead of ssh.
+pub type ServerFake = fn(&[String]) -> Result<String, String>;
+pub static SERVER_FAKE: std::sync::Mutex<Option<ServerFake>> = std::sync::Mutex::new(None);
+
 pub fn server_locus(args: &[String]) -> Result<String, String> {
+    if let Some(fake) = SERVER_FAKE.lock().ok().and_then(|f| *f) {
+        return fake(args);
+    }
     let host = std::env::var("LOCUS_HOST").unwrap_or_else(|_| "compute-node".into());
     let dir = std::env::var("LOCUS_DIR").unwrap_or_else(|_| "/home/alec/server-projects/locus".into());
     let uv = std::env::var("LOCUS_SERVER_UV").unwrap_or_else(|_| "~/.local/bin/uv".into());

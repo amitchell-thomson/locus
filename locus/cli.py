@@ -362,6 +362,9 @@ def cmd_facts(args) -> None:
                 print(F.approve(conn, args.id, value=args.value_as).describe())
             elif a == "reject":
                 print(f"Rejected: {F.reject(conn, args.id).line()}")
+            elif a == "reopen":
+                f, taken = F.reopen(conn, args.id)
+                print(f"Back in Approve: {f.line()}." + (f" Taken back: {taken.line()}." if taken else ""))
             elif a == "log":
                 rows = F.automatic_log(conn, days=args.days)
                 print(_json.dumps(rows) if args.json else "\n".join(
@@ -1582,12 +1585,12 @@ def main(argv=None) -> None:
     phe.set_defaults(func=cmd_heuris)
 
     pfa = sub.add_parser("facts", help="heuris (H2): the facts ledger: show, remember, forget, approve, the auto log")
-    pfa.add_argument("action", choices=["show", "remember", "forget", "proposed", "approve", "reject", "log", "undo",
+    pfa.add_argument("action", choices=["show", "remember", "forget", "proposed", "approve", "reject", "reopen", "log", "undo",
                                         "queue", "import-applications"])
     pfa.add_argument("subject", nargs="?", help="show/remember: me, a registry id, person:<name>")
     pfa.add_argument("slot", nargs="?", help="show/remember: stage, offer:pay, note:<name>, ...")
     pfa.add_argument("value", nargs="?", help="remember: the value")
-    pfa.add_argument("--id", type=int, help="forget/approve/reject/undo: the fact's id")
+    pfa.add_argument("--id", type=int, help="forget/approve/reject/reopen/undo: the fact's id")
     pfa.add_argument("--source", action="append", help="remember: a pointer or where it was said (repeatable)")
     pfa.add_argument("--as-of", dest="as_of", help="remember: YYYY-MM-DD (default today)")
     pfa.add_argument("--route", default="home", choices=["chat", "home", "import"], help="who is writing")

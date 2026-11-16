@@ -354,8 +354,44 @@ def approve(conn: sqlite3.Connection, fact_id: int, value: str | None = None) ->
               as_of=f.as_of, quote=f.quote)
     with conn:
         conn.execute("UPDATE facts SET status='approved', changed=? WHERE id=?", (_now(), fact_id))
-        _log(conn, "approve", w.fact.id, "home", json.dumps({"proposal": fact_id, "edited": edited}))
+        _log(conn, "approve", w.fact.id, "home", json.dumps({"proposal": fact_id, "edited": edited,
+                                                              "wrote": w.action}))
     return w
+
+
+def reopen(conn: sqlite3.Connection, fact_id: int) -> tuple[Fact, Fact | None]:
+    """Put a decided proposal back in Approve: `u` after y or n (16 Nov: "either way yes or no
+    should put it back in the list so I can change my answer"). A refusal only changes its
+    status. An approval also takes back what it wrote: a new current value is retired and the
+    one it replaced restored (as `forget` does); a value that only confirmed what was already
+    true, or was filed as history, is left, since the approval did not make it true. Returns the
+    proposal and the fact taken back, if any."""
+    f = get(conn, fact_id)
+    if not f or f.status not in ("approved", "rejected"):
+        raise FactError(f"fact:{fact_id} was not approved or refused in Approve, so there is nothing to reopen.")
+    taken = None
+    if f.status == "approved":
+        for (fid, detail) in conn.execute("SELECT fact_id, detail FROM fact_log WHERE action='approve' "
+                                          "ORDER BY id DESC").fetchall():
+            d = json.loads(detail or "{}")
+            if d.get("proposal") != fact_id:
+                continue
+            w = get(conn, fid)
+            # Older approvals did not record what they wrote: a row made by the approval is newer
+            # than the proposal; a confirmed one is older.
+            wrote = d.get("wrote") or ("write" if fid > fact_id else "confirm")
+            if w and wrote == "write" and w.status == "current":
+                taken, _ = forget(conn, fid, route="home", action="reopen")
+            elif w and wrote == "history" and w.status == "replaced":
+                with conn:
+                    conn.execute("UPDATE facts SET status='retired', changed=? WHERE id=?", (_now(), fid))
+                    _log(conn, "reopen", fid, "home")
+                taken = get(conn, fid)
+            break
+    with conn:
+        conn.execute("UPDATE facts SET status='proposed', changed=? WHERE id=?", (_now(), fact_id))
+        _log(conn, "reopen", fact_id, "home", json.dumps({"was": f.status, "took_back": taken.id if taken else None}))
+    return get(conn, fact_id), taken
 
 
 def reject(conn: sqlite3.Connection, fact_id: int) -> Fact:

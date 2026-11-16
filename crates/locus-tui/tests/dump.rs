@@ -212,3 +212,60 @@ fn a_calendar_change_is_never_marked_decided_without_kairosd() {
     }
     assert!(!dump::render(&a, 95, 38).unwrap().is_empty());
 }
+
+/// What the stand-in server was asked, in order.
+static ASKED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+fn fake_server(args: &[String]) -> Result<String, String> {
+    ASKED.lock().unwrap().push(args.join(" "));
+    Ok(match args.get(1).map(String::as_str) {
+        Some("reopen") => "Back in Approve: me · education:b14".into(),
+        _ => "Written: me · education:b14".into(),
+    })
+}
+
+#[test]
+fn a_decided_fact_comes_back_with_u_whether_it_was_yes_or_no() {
+    // 16 Nov: "either way yes or no should put it back in the list so I can change my answer"
+    use locus_contract::{ApproveGroup, ApproveItem, ApproveKind};
+    *locus_tui::live::SERVER_FAKE.lock().unwrap() = Some(fake_server);
+    let mut a = app("default", ScreenId::Home);
+    a.home_live = true;
+    let fact = |id: u64, text: &str| ApproveItem {
+        text: text.into(),
+        to: None,
+        from: "heuris".into(),
+        new: false,
+        date: None,
+        changeset: None,
+        mail: None,
+        fact: Some(id),
+        detail: None,
+    };
+    a.fixtures.approve.groups = vec![ApproveGroup {
+        kind: ApproveKind::Fact,
+        label: None,
+        items: vec![fact(375, "education:b14"), fact(376, "education:b15")],
+    }];
+    a.open(ScreenId::Approve);
+    let press = |a: &mut App, c: char| a.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+    for c in ['y', 'n'] {
+        press(&mut a, c);
+        assert_eq!(a.fixtures.approve.groups[0].items.len(), 1, "{c} takes it off the list");
+        press(&mut a, 'u');
+        let items = &a.fixtures.approve.groups[0].items;
+        assert_eq!(items.len(), 2, "{c} then u puts it back: {:?}", a.note);
+        assert_eq!(items[0].fact, Some(375), "back where it was");
+    }
+    // the last of a group: the group comes back with it
+    press(&mut a, 'y');
+    press(&mut a, 'y');
+    assert!(a.fixtures.approve.groups.iter().all(|g| g.kind != ApproveKind::Fact));
+    press(&mut a, 'u');
+    press(&mut a, 'u');
+    assert_eq!(a.fixtures.approve.groups[0].items.len(), 2);
+    *locus_tui::live::SERVER_FAKE.lock().unwrap() = None;
+    let asked = ASKED.lock().unwrap().clone();
+    assert!(asked.contains(&"facts reopen --id 375".to_string()), "{asked:?}");
+    assert!(asked.contains(&"facts reject --id 375".to_string()), "{asked:?}");
+}

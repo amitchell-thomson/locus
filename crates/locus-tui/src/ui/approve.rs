@@ -431,6 +431,7 @@ fn change_item(app: &mut App, at: (usize, usize), action: keryx_store::state::Ac
     let sent = match (&app.mail_queue, app.mail.clone()) {
         (Some(q), _) => {
             q.push_change(id, action, it.text.clone());
+            app.mail_decided_at = Some(std::time::Instant::now());
             Ok(format!("→ {label}: on its way ({} with keryx)", q.waiting()))
         }
         (None, Some(live)) => live.change(&id, &action).map(|_| format!("→ {label}: done")),
@@ -645,6 +646,16 @@ pub fn draw_log(f: &mut Frame, area: Rect, app: &App) {
     lines(f, inner, out);
 }
 
+/// A fact decided here, kept so `u` can put it back: the item as it was shown, and its group
+/// (with only that item) in case the group went when its last item did.
+#[derive(Debug, Clone)]
+pub struct FactDecided {
+    pub id: u64,
+    pub at: (usize, usize),
+    pub group: locus_contract::ApproveGroup,
+    pub when: std::time::Instant,
+}
+
 /// Approve or refuse a proposed fact in heuris's ledger; with `value`, approved as corrected.
 pub fn decide_fact(app: &mut App, (g, i): (usize, usize), id: u64, yes: bool, value: Option<String>) {
     let mut args: Vec<String> = vec![
@@ -659,19 +670,82 @@ pub fn decide_fact(app: &mut App, (g, i): (usize, usize), id: u64, yes: bool, va
     }
     match crate::live::server_locus(&args) {
         Ok(msg) => {
-            if app
-                .fixtures
-                .approve
-                .groups
-                .get(g)
-                .is_some_and(|x| x.items.get(i).is_some_and(|it| it.fact == Some(id)))
+            if let Some(grp) = app.fixtures.approve.groups.get(g)
+                && let Some(it) = grp.items.get(i).filter(|it| it.fact == Some(id))
             {
+                let mut group = grp.clone();
+                group.items = vec![it.clone()];
+                app.fact_undo.push(FactDecided {
+                    id,
+                    at: (g, i),
+                    group,
+                    when: std::time::Instant::now(),
+                });
                 app.fixtures.approve.groups[g].items.remove(i);
                 app.fixtures.approve.groups.retain(|x| !x.items.is_empty());
             }
-            app.note = Some(msg.lines().last().unwrap_or("done").to_string());
+            let said = msg.lines().last().unwrap_or("done").to_string();
+            app.note = Some(format!("{said} · u puts it back"));
         }
         Err(e) => app.note = Some(format!("heuris said no: {e}")),
+    }
+}
+
+/// `u` on a fact: back to waiting in the ledger (an approval's value taken back, what it
+/// replaced restored), and back in the list where it was.
+fn reopen_fact(app: &mut App, d: FactDecided) {
+    match crate::live::server_locus(&["facts".into(), "reopen".into(), "--id".into(), d.id.to_string()]) {
+        Ok(msg) => {
+            let (g, i) = d.at;
+            let groups = &mut app.fixtures.approve.groups;
+            let same = groups
+                .get(g)
+                .is_some_and(|x| x.kind == d.group.kind && x.label == d.group.label);
+            if same {
+                let n = groups[g].items.len();
+                groups[g].items.insert(i.min(n), d.group.items[0].clone());
+            } else {
+                let at = g.min(groups.len());
+                groups.insert(at, d.group);
+            }
+            app.note = Some(msg.lines().last().unwrap_or("back in Approve").to_string());
+        }
+        Err(e) => {
+            app.note = Some(format!("heuris said no: {e}"));
+            app.fact_undo.push(d);
+        }
+    }
+}
+
+/// `u` on Approve: undo the newest decision, a fact's (y or n) or keryx's (a y; a refused mail
+/// proposal changes nothing in keryx).
+fn undo(app: &mut App) {
+    let fact_newer = match (app.fact_undo.last(), app.mail_decided_at) {
+        (Some(f), Some(m)) => f.when >= m,
+        (Some(_), None) => true,
+        (None, _) => false,
+    };
+    if fact_newer {
+        if let Some(d) = app.fact_undo.pop() {
+            reopen_fact(app, d);
+        }
+        return;
+    }
+    let mail = match &app.mail_queue {
+        Some(q) => q.undo_last(),
+        None => Err("nothing to undo here".into()),
+    };
+    match (mail, app.fact_undo.pop()) {
+        (Ok(m), back) => {
+            if let Some(d) = back {
+                app.fact_undo.push(d);
+            }
+            // The next u reaches past this mail decision to an older fact.
+            app.mail_decided_at = None;
+            app.note = Some(m);
+        }
+        (Err(_), Some(d)) => reopen_fact(app, d),
+        (Err(e), None) => app.note = Some(e),
     }
 }
 
@@ -727,12 +801,9 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 app.approve_visual = None;
                 return true;
             }
-            // u: put back the last decision (10 Nov: "add undo").
+            // u: put back the last decision (10 Nov: "add undo"), a fact's too (16 Nov).
             if k.code == KeyCode::Char('u') {
-                app.note = Some(match &app.mail_queue {
-                    Some(q) => q.undo_last().unwrap_or_else(|e| e),
-                    None => "undo works on decisions sent to keryx from this window".into(),
-                });
+                undo(app);
                 return true;
             }
             if k.code == KeyCode::Char('/') {
@@ -972,6 +1043,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 let action = to.clone().unwrap_or_default();
                 q.push(m, c == 'y', what);
                 let waiting = q.waiting();
+                app.mail_decided_at = Some(std::time::Instant::now());
                 app.fixtures.approve.groups[g].items.remove(i);
                 app.fixtures.approve.groups.retain(|x| !x.items.is_empty());
                 app.note = Some(if c == 'y' {
@@ -1107,6 +1179,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                         for (m, what) in &all {
                             q.push(m.clone(), true, what.clone());
                         }
+                        app.mail_decided_at = Some(std::time::Instant::now());
                         app.fixtures.approve.groups.remove(g);
                         app.note = Some(format!("approved the group: {} on their way to keryx", all.len()));
                         return true;

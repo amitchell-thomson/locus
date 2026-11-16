@@ -93,6 +93,11 @@ pub struct App {
     pub approve_pick: Option<crate::mail::Picker>,
     /// `v` on Approve: where the visual selection started (it runs to the cursor).
     pub approve_visual: Option<usize>,
+    /// Facts decided in this window, newest last, for `u` (16 Nov: "either way yes or no should
+    /// put it back in the list so I can change my answer").
+    pub fact_undo: Vec<crate::ui::approve::FactDecided>,
+    /// When a mail decision last left for keryx: `u` undoes whichever kind came last.
+    pub mail_decided_at: Option<std::time::Instant>,
     /// `/` on Approve: the list narrowed to lines with every word typed (10 Nov: "search
     /// should search and filter among approved, not be the general search").
     pub approve_filter: String,
@@ -155,6 +160,8 @@ impl App {
             mail_queue: None,
             approve_pick: None,
             approve_visual: None,
+            fact_undo: Vec::new(),
+            mail_decided_at: None,
             approve_filter: String::new(),
             approve_filtering: false,
             shown: RefCell::new(HashMap::new()),

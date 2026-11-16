@@ -171,9 +171,18 @@ def index(conn: sqlite3.Connection, source: str, items: Iterable[Item], *,
         gone = [ref for ref in known if ref not in seen]
         with conn:
             for ref in gone:
-                row = conn.execute("SELECT id FROM items WHERE ref=?", (ref,)).fetchone()
-                if row:
-                    _delete_item(conn, row[0])
+                row = conn.execute("SELECT id, json_extract(meta, '$.message_id') FROM items WHERE ref=?",
+                                   (ref,)).fetchone()
+                if not row:
+                    continue
+                # The same message under a new pointer (a renumbered thread): keep the way there.
+                if row[1]:
+                    now = conn.execute("SELECT ref FROM items WHERE source=? AND ref != ? AND "
+                                       "json_extract(meta, '$.message_id') = ? LIMIT 1",
+                                       (source, ref, row[1])).fetchone()
+                    if now:
+                        conn.execute("INSERT OR REPLACE INTO ref_alias(old, new) VALUES (?, ?)", (ref, now[0]))
+                _delete_item(conn, row[0])
         st.removed = len(gone)
     return st
 

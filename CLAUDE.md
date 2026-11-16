@@ -28,11 +28,12 @@ a report at the end of the spec. **Do not start a slice, or a step outside the a
 without his approval.** Decisions go in
 [`docs/decisions/`](docs/decisions/), from `docs/decisions/TEMPLATE.md`.
 
-**Where it stands (13 Nov 2026).** Done: Slice 0, Home live, H1 (the index and its tools), H2
-(what is true now: the facts ledger, records, briefs). In progress: Slice C, the cleanup
-([`docs/redesign/slices/c-cleanup.md`](docs/redesign/slices/c-cleanup.md); read its Progress
-section). Next: the Canvas pull, then L (learning). Each repository gets a state file of about 20
-lines saying where it stands (template [`docs/templates/state.md`](docs/templates/state.md)).
+**Where it stands (16 Nov 2026).** Done: Slice 0, Home live, H1 (the index and its tools), H2
+(what is true now: the facts ledger, records, briefs), C (the cleanup), P (the Canvas pull,
+[`docs/redesign/slices/canvas-pull.md`](docs/redesign/slices/canvas-pull.md)). Next: L
+(learning), then the nightly reading digest (ADR-012), each spec first. [`state.md`](state.md)
+says where the repo stands in about 20 lines (template
+[`docs/templates/state.md`](docs/templates/state.md)).
 
 ## 1. The parts
 
@@ -49,8 +50,9 @@ lines saying where it stands (template [`docs/templates/state.md`](docs/template
 **heuris** (`locus/heuris/`, ADR-011). It indexes items from mail, the calendar, chats, repos
 and files (`locus/heuris/sources/`) into `heuris.db`: items, chunks, FTS and vectors, with kind,
 thing, area and date as vec0 metadata columns so a narrow filter is applied before the KNN rather
-than after it. The library is searched alongside (`library_candidates` in `locus/heuris/tools.py`)
-and the two are reranked together. On top of the index:
+than after it. Since P7 every library section is a heuris item too (`locus/heuris/sources/library.py`),
+so the library is filtered and ranked in the same index; the syllabi are items as well
+(`locus/heuris/syllabus.py`: topics quoted from the page, linked to the course's lectures). On top of the index:
 
 - **The facts ledger** (`locus/heuris/facts.py`): `subject · slot = value`, as of a date, with
   sources. Slots come from a fixed list, `taxonomy/fact-slots.toml`; an unknown slot is refused
@@ -126,7 +128,11 @@ Most of these were learned by shipping the violation. They apply to everything n
    its own homework. Add a build session that reads an answer key to the set.
 10. **kairos and keryx invariants are invariants here** (their CLAUDE.md files): single writer,
     every write a changeset with before and after images, risk computed and never supplied, the
-    live guard, Claude never sends mail.
+    live guard, Claude never sends mail. **Claude holds only MCP-only tokens** (16 Nov): kairos's
+    `~/.config/kairos/secrets/mcp-token` on the server, keryx's Keychain `keryx-mcp-token`; each
+    works on `/mcp` and nowhere else. Never put a master token in `~/.claude.json` or a chat's
+    `mcp.json`: with it, a session with Bash could call the API as Alec at the keyboard and skip
+    approval, or send.
 
 ## 3. The failure class this codebase is built to resist
 
@@ -399,8 +405,8 @@ locus/
   installs `deploy/systemd/` and makes the enabled set equal `deploy/systemd/enabled`, deleting
   any locus unit the repo no longer has. Enabled now: `locus-backup.timer`,
   `locus-capture.timer`, `locus-watch.timer`, `locus-heuris.timer`,
-  `locus-heuris-derive.timer`, `locus-http.service`, `locus-public.service`,
-  `locus-kairosd.service`. Editing a unit on the server alone is drift the next deploy
+  `locus-heuris-derive.timer`, `locus-canvas.timer`, `locus-http.service`,
+  `locus-public.service`, `locus-kairosd.service`. Editing a unit on the server alone is drift the next deploy
   overwrites.
 - **Restarts.** MCP is one HTTP process (`locus-http.service`) plus the public listener
   (`locus-public.service`); the deploy restarts each long-running service when the code moved,

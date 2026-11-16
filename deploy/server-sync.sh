@@ -12,6 +12,14 @@ UNITDIR="$HOME/.config/systemd/user"
 SRC=deploy/systemd
 export PATH="$HOME/.local/bin:$PATH"
 
+# What changed is measured from the last commit a server-sync COMPLETED, not from the commit the
+# pull started at: a deploy that failed after its pull (a cargo or uv error) left old == new on
+# the retry, so the build, the migration and the restarts it had not done were skipped and the
+# services ran old code (16 Nov). Recorded at the end of a run that got that far.
+DONE_FILE=data/state/deployed-sha
+if [[ -s "$DONE_FILE" ]] && git cat-file -e "$(cat "$DONE_FILE")^{commit}" 2>/dev/null; then
+  old="$(cat "$DONE_FILE")"
+fi
 changed_files="$(git diff --name-only "$old" "$new")"
 
 # 0. One-time (2026-10-19): the data directory `vault/` becomes `data/`. The pull has just created
@@ -41,6 +49,16 @@ fi
 echo "== uv sync --all-extras"
 uv sync --all-extras --quiet
 
+# 2. Schema, straight after the dependencies and BEFORE the Rust build (16 Nov): the watch timer
+#    calls migrate() every 5 minutes from this checkout, so a migration waiting through a
+#    multi-minute cargo build could run with no backup. Backup first, then migrate, only when a migration arrived; otherwise the schema
+#    would move whenever the next ingest or `locus mcp` happened to call migrate().
+if grep -q '^locus/db/migrations/versions/' <<<"$changed_files"; then
+  echo "== new migration: backup, then migrate"
+  uv run locus backup
+  uv run locus migrate
+fi
+
 # 1b. The Rust binaries (kairos, ADR-008). Built when Rust sources or the lockfile moved, or a
 #     binary is missing; `--locked` so the server runs exactly the lockfile the laptop tested.
 #     `cargo install` replaces the binary in ~/.cargo/bin atomically; the running daemon keeps
@@ -63,14 +81,6 @@ if [[ -e "$UNITDIR/kairosd.service" ]]; then
   mv "$UNITDIR/kairosd.service" "$UNITDIR/kairosd.service.bak-2026-10-24"
   systemctl --user daemon-reload
   kairos_built=1
-fi
-
-# 2. Schema. Backup first, then migrate, only when a migration arrived; otherwise the schema
-#    would move whenever the next ingest or `locus mcp` happened to call migrate().
-if grep -q '^locus/db/migrations/versions/' <<<"$changed_files"; then
-  echo "== new migration: backup, then migrate"
-  uv run locus backup
-  uv run locus migrate
 fi
 
 # 3. Unit files: the repo is the source. Copy what differs, remove locus units the repo dropped.
@@ -157,4 +167,6 @@ if command -v kairos >/dev/null; then
   echo "== kairos doctor"
   kairos doctor || status=1
 fi
+mkdir -p "$(dirname "$DONE_FILE")"
+echo "$new" > "$DONE_FILE"
 exit $status

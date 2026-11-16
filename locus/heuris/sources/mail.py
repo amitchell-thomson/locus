@@ -123,7 +123,8 @@ def items(root: Path) -> Iterator[Item]:
                 people=[p for p in people if p[0]],
                 meta={"account": acct, "from": email, "from_name": name, "why": m.get("why"),
                       "flagged": m.get("flagged"), "needs_reply": needs_reply,
-                      "attachments": m.get("attachments") or [], "in_inbox": m.get("in_inbox")},
+                      "attachments": m.get("attachments") or [], "in_inbox": m.get("in_inbox"),
+                      "message_id": m.get("message_id")},
             )
             # Attachments read on the laptop (H1.12): one item each, beside their message, with
             # its people, thing and area so every filter that finds the message finds them.

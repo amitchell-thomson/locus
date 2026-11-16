@@ -294,3 +294,16 @@ def test_an_area_is_matched_whatever_its_case_and_personal_means_its_streams(con
     index(conn, "calendar", [Item(ref="event:travel/1", kind="event", at=at(14), title="Train to London",
                                   text="Train to London", area="Travel")], embed=fake_embed)
     assert "event:travel/1" in S(conn, "train London", area="Personal")
+
+
+def test_a_renumbered_message_still_opens_from_its_old_pointer(conn):
+    # 16 Nov: mail:oxford/12888/7879 became mail:oxford/13080/8441; four facts cited the old one.
+    old = mail("mail:oxford/50/500", 7, "Tutor", "tutor@ox.ac.uk", "Tutorial times", "Fridays at 2.")
+    old.meta["message_id"] = "<abc@ox.ac.uk>"
+    index(conn, "mail", [old], embed=fake_embed)
+    new = mail("mail:oxford/60/600", 7, "Tutor", "tutor@ox.ac.uk", "Tutorial times", "Fridays at 2.")
+    new.meta["message_id"] = "<abc@ox.ac.uk>"
+    keep = [mail("mail:oxford/1/11", 3, "Sam Smith", "sam.smith@ox.ac.uk", "B15 tutorial", "Thursday at 10 works.", "b15")]
+    index(conn, "mail", [new, *keep], embed=fake_embed, prune=True)
+    out = ht.open_ref(conn, "mail:oxford/50/500")
+    assert "moved to mail:oxford/60/600" in out and "Fridays at 2" in out

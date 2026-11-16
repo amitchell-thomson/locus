@@ -429,6 +429,21 @@ def _more(ref: str, page: int, n: int) -> str:
     return f"\n\n[page {page} of {n}, the last]"
 
 
+def _alias(conn: sqlite3.Connection, ref: str) -> str | None:
+    """Where an old pointer's item lives now, following a chain of renumberings."""
+    seen = set()
+    while ref not in seen:
+        seen.add(ref)
+        try:
+            row = conn.execute("SELECT new FROM ref_alias WHERE old=?", (ref,)).fetchone()
+        except sqlite3.OperationalError:
+            return None
+        if not row:
+            break
+        ref = row[0]
+    return ref if len(seen) > 1 else None
+
+
 def open_ref(conn: sqlite3.Connection, ref: str, *, around: int = 3, page: int = 1) -> str:
     env = Envelope()
     ref = ref.strip()
@@ -449,6 +464,9 @@ def open_ref(conn: sqlite3.Connection, ref: str, *, around: int = 3, page: int =
             if moved and moved[1] != parent:
                 out = open_ref(conn, moved[0], around=around, page=page)
                 return f"(The thread moved to {moved[1]} when a reply arrived; this is it now.)\n" + out
+        if not rows and (alias := _alias(conn, ref)):
+            return f"({ref} moved to {alias} when Mail regrouped the thread; this is it now.)\n" + \
+                open_ref(conn, alias, around=around, page=page)
         if not rows:
             return f"No mail thread {parent}."
         readable = {}

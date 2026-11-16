@@ -97,6 +97,15 @@ CREATE TABLE IF NOT EXISTS sources (
     error      TEXT,
     note       TEXT
 );
+
+-- An old pointer and where its item lives now (16 Nov): a mail thread is renumbered when Mail
+-- regroups it, and facts and records keep citing the old pointer. Not an index table: a rebuilt
+-- index would lose what the facts' sources need.
+CREATE TABLE IF NOT EXISTS ref_alias (
+    old TEXT PRIMARY KEY,
+    new TEXT NOT NULL,
+    at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 

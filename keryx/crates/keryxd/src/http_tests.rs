@@ -35,6 +35,7 @@ fn app() -> (Router, Arc<Mutex<Engine>>) {
     let st = AppState {
         engine: engine.clone(),
         token: Arc::new(TOKEN.into()),
+        mcp_token: Some(Arc::new("claude-token-0123456789abcdef".into())),
         sync_now: tx,
     };
     (router(st, None), engine)
@@ -245,4 +246,24 @@ async fn kairos_author_comes_from_the_caller() {
     .await;
     assert_eq!(s, StatusCode::FORBIDDEN);
     assert_eq!(*k.0.lock().unwrap(), vec![As::Alec, As::Script]);
+}
+
+#[tokio::test]
+async fn claudes_token_cannot_reach_the_api_as_alec() {
+    // 16 Nov: Claude's config held the master token, and "Alec at the keyboard" is two headers,
+    // so a session with Bash could approve its own drafts and send. Its own token is MCP only.
+    let (app, _) = app();
+    let (s, _) = call(
+        &app,
+        "GET",
+        "/api/status",
+        &[
+            ("authorization", "Bearer claude-token-0123456789abcdef"),
+            ("x-keryx-author", "alec"),
+            ("x-keryx-interactive", "1"),
+        ],
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
 }

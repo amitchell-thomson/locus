@@ -590,6 +590,7 @@ def cmd_backup(args) -> None:
         db=cfg.paths.db, raw_store=cfg.paths.raw_store, notes=cfg.paths.notes,
         backup_root=root, log=print,
     )
+    bk.prune_snapshots(root, log=print)
     m = bk.read_manifest(snapshot)
     print(f"\nSnapshot: {snapshot}")
     if m:

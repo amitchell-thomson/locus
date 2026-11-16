@@ -35,6 +35,7 @@ fn state() -> AppState {
     AppState {
         engine: Arc::new(Mutex::new(engine)),
         token: Arc::new(TOKEN.into()),
+        mcp_token: Some(Arc::new("claude-token-0123456789abcdef".into())),
         sync_now: tx,
     }
 }

@@ -93,3 +93,13 @@ def test_incremental_snapshot_links_against_prior(vault):
     assert first != second
     m = bk.read_manifest(second)
     assert m.linked_from == first.name
+
+
+def test_only_the_newest_ten_snapshots_are_kept(tmp_path):
+    from locus import backup as bk
+
+    for i in range(13):
+        (tmp_path / f"{bk.SNAPSHOT_PREFIX}2026-11-{i + 1:02d}T00-00-00Z").mkdir()
+    gone = bk.prune_snapshots(tmp_path)
+    left = bk.list_snapshots(tmp_path)
+    assert len(gone) == 3 and len(left) == 10 and left[0].name.endswith("11-04T00-00-00Z")

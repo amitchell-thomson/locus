@@ -446,11 +446,12 @@ fn turn_args(dir: &Path, id: &str, resume: bool, text: &str) -> Result<Vec<Strin
     Ok(a)
 }
 
-/// keryx's MCP, on keryxd's own token (the same one locus's Approve uses), written 0600 beside
-/// the index. None when keryx is not set up here: the chat still runs, without mail.
+/// keryx's MCP, on Claude's own token (`keryx-mcp-token`, MCP only; 16 Nov: it was keryxd's
+/// master token, which the chat could read from this file and use on the API as Alec), written
+/// 0600 beside the index. None when keryx is not set up here: the chat still runs, without mail.
 fn keryx_mcp(dir: &Path) -> Option<PathBuf> {
     let cfg = keryx_core::config::Config::load(&keryx_core::config::Config::default_path()).ok()?;
-    let token = keryx_store::keychain::get("keryx-api-token").ok()?;
+    let token = keryx_store::keychain::get("keryx-mcp-token").ok()?;
     let json = serde_json::json!({"mcpServers": {"keryx": {
         "type": "http",
         "url": format!("{}/mcp", cfg.server_url().trim_end_matches('/')),

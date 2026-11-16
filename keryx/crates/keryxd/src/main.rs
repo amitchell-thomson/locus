@@ -123,6 +123,7 @@ fn main() -> anyhow::Result<()> {
     let st = http::AppState {
         engine,
         token: std::sync::Arc::new(token),
+        mcp_token: mcp_token().map(std::sync::Arc::new),
         sync_now: tx,
     };
     let rt = tokio::runtime::Runtime::new()?;
@@ -170,4 +171,22 @@ pub fn now() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
+}
+
+/// Claude's MCP-only token, Keychain `keryx-mcp-token`, made on first start (16 Nov).
+fn mcp_token() -> Option<String> {
+    use keryx_store::keychain;
+    if let Ok(t) = keychain::get("keryx-mcp-token")
+        && t.len() >= 24
+    {
+        return Some(t);
+    }
+    let t = format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple());
+    match keychain::set("keryx-mcp-token", &t) {
+        Ok(()) => Some(t),
+        Err(e) => {
+            tracing::warn!(error = %e, "no MCP token: Claude needs the master token");
+            None
+        }
+    }
 }

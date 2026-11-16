@@ -8,11 +8,13 @@ use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 
 const TOKEN: &str = "test-token-0123456789abcdef";
+const MCP_TOKEN: &str = "claude-token-0123456789abcdef";
 
 fn state(env: &Env) -> AppState {
     AppState {
         engine: Arc::new(Mutex::new(env.engine())),
         token: Arc::new(TOKEN.into()),
+        mcp_token: Some(Arc::new(MCP_TOKEN.into())),
     }
 }
 
@@ -514,4 +516,31 @@ async fn claude_cannot_undo_alecs_own_changes() {
     )
     .await;
     assert_eq!(r["result"]["isError"], true, "{r}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn claudes_token_works_for_mcp_only() {
+    // 16 Nov: Claude's config held the master token, so a session with Bash could call the API
+    // as Alec at the keyboard and skip approval. Its own token reaches MCP and nothing else.
+    let env = Env::new(true);
+    let (base, _h, _) = start(&env).await;
+    let c = client();
+    let api = c
+        .get(format!("{base}/api/status"))
+        .bearer_auth(MCP_TOKEN)
+        .header("x-kairos-interactive", "1")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(api.status(), 403);
+    let mcp = c
+        .post(format!("{base}/mcp"))
+        .bearer_auth(MCP_TOKEN)
+        .header("accept", "application/json, text/event-stream")
+        .json(&json!({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}}}))
+        .send()
+        .await
+        .unwrap();
+    assert!(mcp.status().is_success(), "{}", mcp.status());
 }

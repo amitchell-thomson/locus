@@ -21,6 +21,11 @@ use std::sync::{Arc, Mutex};
 pub struct AppState {
     pub engine: Arc<Mutex<Engine>>,
     pub token: Arc<String>,
+    /// Claude's token (16 Nov): accepted on /mcp only, where every call is Claude's and gets the
+    /// full policy. The master token above stays with the TUI and CLI; with it in Claude's
+    /// config, a session with Bash could call the HTTP API as Alec, interactively, and skip
+    /// approval.
+    pub mcp_token: Option<Arc<String>>,
 }
 
 fn ct_eq(a: &str, b: &str) -> bool {
@@ -151,9 +156,22 @@ async fn auth(State(st): State<AppState>, req: Request, next: Next) -> Response 
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
-        .is_some_and(|t| ct_eq(t.trim(), &st.token));
-    if ok {
+        .map(|t| t.trim().to_string());
+    let master = ok.as_deref().is_some_and(|t| ct_eq(t, &st.token));
+    let claude = ok
+        .as_deref()
+        .is_some_and(|t| st.mcp_token.as_deref().is_some_and(|m| ct_eq(t, m)));
+    if master || (claude && req.uri().path().starts_with("/mcp")) {
         next.run(req).await
+    } else if claude {
+        HttpError(
+            StatusCode::FORBIDDEN,
+            ApiError {
+                error: "Claude's token works for MCP only".into(),
+                reasons: vec![],
+            },
+        )
+        .into_response()
     } else {
         HttpError(
             StatusCode::UNAUTHORIZED,

@@ -30,6 +30,35 @@ struct Args {
     no_jobs: bool,
 }
 
+/// Claude's MCP-only token: `KAIROS_MCP_TOKEN`, else `~/.config/kairos/secrets/mcp-token`,
+/// made (0600) on first start. None if it can't be read or made: MCP then needs the master.
+fn mcp_token() -> Option<String> {
+    if let Ok(t) = std::env::var("KAIROS_MCP_TOKEN")
+        && t.trim().len() >= 24
+    {
+        return Some(t.trim().to_string());
+    }
+    let p = dirs_home()?.join(".config/kairos/secrets/mcp-token");
+    if let Ok(t) = std::fs::read_to_string(&p)
+        && t.trim().len() >= 24
+    {
+        return Some(t.trim().to_string());
+    }
+    let t = format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple());
+    std::fs::create_dir_all(p.parent()?).ok()?;
+    std::fs::write(&p, &t).ok()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600));
+    }
+    Some(t)
+}
+
+fn dirs_home() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(PathBuf::from)
+}
+
 fn token(cfg: &Config) -> Result<String> {
     if let Ok(t) = std::env::var("KAIROS_TOKEN")
         && !t.trim().is_empty()
@@ -143,6 +172,7 @@ async fn main() -> Result<()> {
     let st = AppState {
         engine: Arc::new(Mutex::new(engine)),
         token: Arc::new(token),
+        mcp_token: mcp_token().map(Arc::new),
     };
     let app = http::router(st.clone(), Some(mcp::router(st.clone(), hosts)));
     if !args.no_jobs {

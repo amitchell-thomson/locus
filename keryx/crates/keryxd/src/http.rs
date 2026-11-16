@@ -19,6 +19,10 @@ use std::sync::{Arc, Mutex};
 pub struct AppState {
     pub engine: Arc<Mutex<Engine>>,
     pub token: Arc<String>,
+    /// Claude's token (16 Nov): /mcp only, where every call is Claude's. The master token above
+    /// stays with the TUI and CLI; in Claude's config it let a session with Bash call the API
+    /// as Alec at the keyboard, approve its own drafts and send.
+    pub mcp_token: Option<Arc<String>>,
     /// Ask the jobs loop to sync now.
     pub sync_now: std::sync::mpsc::SyncSender<()>,
 }
@@ -88,6 +92,17 @@ async fn auth(State(st): State<AppState>, mut req: Request, next: Next) -> Respo
     };
     if constant_eq(token.as_bytes(), st.token.as_bytes()) {
         return next.run(req).await;
+    }
+    if st
+        .mcp_token
+        .as_deref()
+        .is_some_and(|m| constant_eq(token.as_bytes(), m.as_bytes()))
+    {
+        return if req.uri().path().starts_with("/mcp") {
+            next.run(req).await
+        } else {
+            HttpError(StatusCode::FORBIDDEN, "Claude's token works for MCP only".into()).into_response()
+        };
     }
     // A run token: valid for its run only, on /mcp only, while it runs.
     let engine = st.engine.clone();

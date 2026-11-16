@@ -25,6 +25,7 @@ without that, full copies would make frequent backups too expensive to actually 
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -115,6 +116,7 @@ def _backup_ledger(heuris_db: Path, dest: Path) -> int:
             return 0
         out = sqlite3.connect(str(dest))
         n = 0
+        src.execute("BEGIN")  # one snapshot of every table: facts and fact_log agree
         try:
             for t in tables:
                 ddl = src.execute("SELECT sql FROM sqlite_master WHERE name=?", (t,)).fetchone()[0]
@@ -177,6 +179,21 @@ def list_snapshots(backup_root: Path) -> list[Path]:
     return sorted(p for p in backup_root.iterdir() if p.is_dir() and p.name.startswith(SNAPSHOT_PREFIX))
 
 
+KEEP = 10
+
+
+def prune_snapshots(backup_root: Path, keep: int = KEEP, log=lambda _m: None) -> list[Path]:
+    """Delete all but the newest `keep` snapshots (16 Nov, his call: "maybe only like 10"; 120
+    of them had taken 29 GB, each a full copy of locus.db). Raw files are hardlinked between
+    snapshots, so removing an old one frees only what no newer one shares."""
+    snaps = list_snapshots(backup_root)
+    gone = snaps[: max(0, len(snaps) - keep)]
+    for p in gone:
+        shutil.rmtree(p, ignore_errors=True)
+        log(f"  pruned {p.name}")
+    return gone
+
+
 def create_backup(
     *,
     db: Path,
@@ -200,7 +217,11 @@ def create_backup(
 
     log(f"  DB     -> online backup ({db})")
     db_bytes, pages = _backup_db(db, snapshot / "locus.db")
-    ledger_rows = _backup_ledger(db.parent / "heuris.db", snapshot / "heuris-ledger.db")
+    from locus.heuris import db as hdb
+
+    # heuris.db's own path ($LOCUS_HEURIS_DB honoured: beside locus.db missed it, 16 Nov).
+    heuris = hdb.path() if os.environ.get("LOCUS_HEURIS_DB") else db.parent / "heuris.db"
+    ledger_rows = _backup_ledger(heuris, snapshot / "heuris-ledger.db")
     log(f"  ledger -> {ledger_rows} rows (facts, records, briefs) from heuris.db")
 
     link_src = (prior[-1] / "raw") if prior else None

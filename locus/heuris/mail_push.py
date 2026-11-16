@@ -209,8 +209,11 @@ def build(db: Path = KERYX_DB, stage: Path | None = None) -> Report:
                     left_samples[why].append(f"{fr.get('email', '')} | {(m['subject'] or '')[:80]}")
                 continue
             r.kept += 1
-            body, counts = scrub(m["body_text"] or "", known)
-            subj, c2 = scrub(m["subject"] or "", known)
+            # Secrets AND identifiers (bank details, IBAN, NI and passport numbers): bodies went
+            # through the secret scrubber only, so an SSI thread's sort codes and IBAN reached
+            # the server and the index (16 Nov). Attachments always had both.
+            body, counts = documents.clean(m["body_text"] or "", known)
+            subj, c2 = documents.clean(m["subject"] or "", known)
             for c in (counts, c2):
                 for kk, v in c.items():
                     r.redacted[kk] = r.redacted.get(kk, 0) + v

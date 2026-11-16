@@ -48,7 +48,7 @@ def test_each_identifier_kind_is_redacted():
     assert "£1,000 per week from 21 June 2027" in out and "20260628" in out   # terms survive
 
 
-def _keryx(tmp_path, attachments, raw_ref):
+def _keryx(tmp_path, attachments, raw_ref, body="Please find attached."):
     db = tmp_path / "keryx.db"
     c = sqlite3.connect(db)
     c.executescript("""
@@ -60,7 +60,7 @@ def _keryx(tmp_path, attachments, raw_ref):
     """)
     c.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
               (7, "personal", "t1", "<a>", '{"email":"alec.mitchellthomson@gmail.com","name":"Alec"}', "[]", "[]",
-               "Meet Millennium Questionnaire", 1782600000, 1, 1, 0, "[]", "Please find attached.",
+               "Meet Millennium Questionnaire", 1782600000, 1, 1, 0, "[]", body,
                json.dumps(attachments), str(raw_ref)))
     c.execute("INSERT INTO links VALUES ('personal','t1','locus','item','millennium','Millennium')")
     c.commit()
@@ -158,3 +158,13 @@ def test_a_downloads_file_is_linked_to_its_application_by_its_text():
     assert _thing_by_text("A letter from Brevan Howard and Millennium", stages) is None, "two firms: none"
     book = "Advanced Portfolio Management. " + "Factor models and risk. " * 400 + "Millennium made an offer."
     assert _thing_by_text(book, stages) is None, "named deep in a book: not about the firm"
+
+
+def test_a_mail_body_is_cleaned_of_bank_details_not_only_secrets(tmp_path):
+    # 16 Nov: bodies had only the secret scrubber; an SSI thread's sort codes and IBAN reached
+    # the server and the index.
+    db = _keryx(tmp_path, [], tmp_path / "none.emlx",
+                body="Our details: Sort code: 60-16-13 Account number: 31926819, IBAN GB29 NWBK 6016 1331 9268 19.")
+    build(db, tmp_path / "stage")
+    text = " ".join(i.text for i in items(tmp_path / "stage") if i.kind == "mail")
+    assert "Our details" in text and "31926819" not in text and "60-16-13" not in text and "GB29" not in text

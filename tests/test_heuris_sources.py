@@ -72,7 +72,11 @@ def test_family_events_get_the_family_area_and_tasks_their_thing():
     assert e.title.startswith("[family]") and "not necessarily Alec's" in e.text and e.meta["family"]
     own = calendar.event_item({"uid": "V", "source": "studies", "key": "Studies", "title": "B15 lecture",
                                "recurring": False, "span": {"type": "all_day", "start": "2026-11-12"}})
-    assert own.title == "B15 lecture" and "FAMILY" not in own.text
+    assert own.title == "B15 lecture" and "FAMILY" not in own.text and own.thing is None
+    filed = calendar.event_item({"uid": "W", "source": "studies", "key": "Studies", "title": "B15 lecture",
+                                 "recurring": False, "meta": {"locus": "b15"},
+                                 "span": {"type": "all_day", "start": "2026-11-12"}})
+    assert filed.thing == "b15"     # what kairos filed it under (16 Nov: every event had none)
     t = calendar.task_item({"id": "t-1", "title": "plan", "status": "open", "locus": "quast",
                             "created_at": "2026-11-09T14:29:20.632843778Z"})
     assert t.thing == "quast" and t.area == "Projects"

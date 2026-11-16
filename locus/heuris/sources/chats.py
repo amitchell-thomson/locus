@@ -141,7 +141,15 @@ def session_items(path: Path, machine: str) -> list[Item]:
                 reply_uuid = reply_uuid or d.get("uuid")
     flush()
     thing = thing_of(cwd)
+    # The laptop's transcripts arrive scrubbed (transcripts_push); the server's own are read raw
+    # from ~/.claude/projects, so a session that printed an env file would put a token in the
+    # index the public listener serves (16 Nov). Scrubbed here, for every machine (idempotent).
+    from locus.scrub import load_known, scrub
+
+    known = load_known()
     for it in out:
+        it.text, _ = scrub(it.text, known)
+        it.title, _ = scrub(it.title, known)
         it.thing = thing
         it.area = registry.area_of(thing)
         it.meta.update({"session": session, "machine": machine, "cwd": cwd, "session_title": title})

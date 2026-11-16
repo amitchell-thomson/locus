@@ -290,14 +290,31 @@ def write(conn: sqlite3.Connection, subject: str, slot: str, value: str, *, sour
             between = conn.execute("SELECT 1 FROM facts WHERE subject=? AND slot=? AND status='replaced' "
                                    "AND as_of >= ? AND as_of < ?", (subject, slot, as_of, cur.as_of)).fetchone()
             new_as_of = as_of if as_of < cur.as_of and not between else cur.as_of
+            if merged == cur.sources and new_as_of == cur.as_of and (quote is None or cur.quote):
+                # Nothing new: no write and no log line (the hourly calendar read logged 56
+                # "confirm"s on one fact in two days, 16 Nov).
+                return Written(cur, "confirm", added_source=False)
             conn.execute("UPDATE facts SET sources=?, quote=COALESCE(quote, ?), as_of=?, changed=? WHERE id=?",
                          (json.dumps(merged), quote, new_as_of, now, cur.id))
             _log(conn, "confirm", cur.id, route, json.dumps(sources))
             return Written(get(conn, cur.id), "confirm", added_source=len(merged) > len(cur.sources))
         older = cur is not None and as_of < cur.as_of
+        if older:
+            # The same older value already in the history: add any new source to it, do not file
+            # it again (the calendar re-read an interview every hour and filed 105 identical
+            # history rows, 11 to 16 Nov).
+            for r in conn.execute(f"SELECT {_COLS} FROM facts WHERE subject=? AND slot=? AND status='replaced' "
+                                  "AND as_of=?", (subject, slot, as_of)).fetchall():
+                h = Fact.of(r)
+                if _norm_value(h.value) == _norm_value(value):
+                    extra = [s for s in sources if s not in h.sources]
+                    if extra:
+                        conn.execute("UPDATE facts SET sources=?, changed=? WHERE id=?",
+                                     (json.dumps(h.sources + extra), now, h.id))
+                    return Written(get(conn, h.id), "history", cur)
         fid = conn.execute(
-            f"INSERT INTO facts(subject, slot, value, as_of, sources, quote, route, status, replaces, created, changed) "
-            f"VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO facts(subject, slot, value, as_of, sources, quote, route, status, replaces, created, changed) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (subject, slot, value, as_of, json.dumps(sources), quote, route,
              "replaced" if older else "current", None if older else (cur.id if cur else None), now, now)).lastrowid
         if older:
@@ -319,8 +336,10 @@ def propose(conn: sqlite3.Connection, subject: str, slot: str, value: str, *, so
     cur = _current_one(conn, subject, slot)
     if cur and _norm_value(cur.value) == _norm_value(value):
         return None
+    # Asked before: waiting, refused, or answered (an approval he corrected leaves the mail's
+    # wording on the proposal, which the next read of the thread would otherwise ask again).
     for r in conn.execute("SELECT value, status FROM facts WHERE subject=? AND slot=? AND status IN "
-                          "('proposed','rejected')", (subject, slot)):
+                          "('proposed','rejected','approved')", (subject, slot)):
         if _norm_value(r[0]) == _norm_value(value):
             return None
     now = _now()
@@ -350,8 +369,10 @@ def approve(conn: sqlite3.Connection, fact_id: int, value: str | None = None) ->
         raise FactError(f"fact:{fact_id} is not waiting for approval.")
     edited = value is not None and _norm_value(value) != _norm_value(f.value)
     sources = f.sources + ([f"corrected by him in Approve, {date.today().isoformat()} (was: {f.value})"] if edited else [])
-    w = write(conn, f.subject, f.slot, value.strip() if edited else f.value, sources=sources, route=f.route,
-              as_of=f.as_of, quote=f.quote)
+    # Corrected by him, it is his word (route home), so mail can only propose against it, never
+    # overwrite it (a firm's next mail replaced his corrected wording, 16 Nov).
+    w = write(conn, f.subject, f.slot, value.strip() if edited else f.value, sources=sources,
+              route="home" if edited else f.route, as_of=f.as_of, quote=f.quote)
     with conn:
         conn.execute("UPDATE facts SET status='approved', changed=? WHERE id=?", (_now(), fact_id))
         _log(conn, "approve", w.fact.id, "home", json.dumps({"proposal": fact_id, "edited": edited,

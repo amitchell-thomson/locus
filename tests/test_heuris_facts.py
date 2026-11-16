@@ -229,3 +229,23 @@ def test_a_decided_proposal_goes_back_to_approve_and_an_approval_is_taken_back(c
     assert F.reopen(conn, q.fact.id)[1] is None and _now(conn, "me", "location") == "Oxford"
     with pytest.raises(F.FactError):
         F.reopen(conn, q.fact.id + 1000)
+
+
+def test_an_hourly_reread_files_nothing_new(conn):
+    # 16 Nov: the calendar re-read an interview every hour; 105 identical history rows.
+    F.write(conn, "jump", "interview:2026-10-16", "Jump interview 16:00", sources=SRC, route="mail", as_of="2026-10-27")
+    for _ in range(3):
+        F.write(conn, "jump", "interview:2026-10-16", "Jump interview 15:00", sources=["event:x"], route="calendar",
+                as_of="2026-10-16")
+        F.write(conn, "jump", "interview:2026-10-16", "Jump interview 16:00", sources=SRC, route="mail",
+                as_of="2026-10-27")
+    rows = conn.execute("SELECT status FROM facts WHERE slot='interview:2026-10-16'").fetchall()
+    assert sorted(r[0] for r in rows) == ["current", "replaced"]
+    assert conn.execute("SELECT COUNT(*) FROM fact_log").fetchone()[0] == 2
+
+
+def test_a_corrected_approval_is_his_word_and_never_asked_again(conn):
+    p = F.propose(conn, "jump", "stage", "offer", sources=SRC, route="mail", why="x", as_of="2026-10-20")
+    w = F.approve(conn, p.fact.id, value="offer accepted")
+    assert w.fact.route == "home"
+    assert F.propose(conn, "jump", "stage", "offer", sources=SRC, route="mail", why="x", as_of="2026-10-20") is None

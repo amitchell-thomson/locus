@@ -34,6 +34,7 @@ import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
 from locus.heuris import facts as F
 from locus.heuris import registry
@@ -200,7 +201,13 @@ SCHEMA = {
 
 
 def user_prompt(conn: sqlite3.Connection, msgs: list[Message], today: date) -> str:
-    known = [f for f in F.current(conn) if F.subject_kind(f.subject) in ("application", "course", "role", "me")]
+    def kind(subject: str) -> str | None:
+        try:
+            return F.subject_kind(subject)
+        except F.FactError:  # a registry entry removed while its facts remain: not a whole-run crash
+            return None
+
+    known = [f for f in F.current(conn) if kind(f.subject) in ("application", "course", "role", "me")]
     facts = "\n".join(f"- {f.subject} · {f.slot} = {f.value} (as of {f.as_of})" for f in known[:120]) or "- none yet"
     return (f"Today is {today.isoformat()}.\n\nFacts already recorded (reuse their slot names; restate one only "
             f"if the thread changes or confirms it):\n{facts}\n\nThe thread:\n<thread>\n{render_thread(msgs)}\n</thread>")
@@ -241,11 +248,22 @@ def has_authority(subject: str, slot: str, m: Message) -> bool:
     base = slot.split(":")[0]
     domain = m.sender.split("@", 1)[1]
     if kind == "application" and base in AUTO_APPLICATION:
-        return any(d in domain for d in _firm_domains(subject)) or m.why == "a firm or recruiting system"
+        if any(d in domain for d in _firm_domains(subject)):
+            return True
+        # Via a recruiting system (Workday, HackerRank): only when the mail names THIS firm in the
+        # sender's name or the subject ("Millennium HR", "HackerRank Citadel ... Invitation").
+        # Without that check any firm's mail could write any application's stage, the subject
+        # being the model's choice (16 Nov).
+        company = (registry.entries().get(subject, {}).get("company") or "").lower()
+        seen = f"{m.name} {m.title}".lower()
+        names = {company, *_firm_domains(subject)} - {""}
+        return m.why == "a firm or recruiting system" and any(n in seen for n in names)
     if kind == "course" and base in AUTO_COURSE:
         return domain == "ox.ac.uk" or domain.endswith(".ox.ac.uk")
     return False
 
+
+LONDON = ZoneInfo("Europe/London")
 
 HIS_ROUTES = ("chat", "home", "import")
 
@@ -360,8 +378,11 @@ def calendar_facts(conn: sqlite3.Connection, *, since: str) -> int:
         app = app_for_event(title, at, thing)
         if not app:
             continue
-        day = at[:10]
-        value = f"{title} ({at[:16].replace('T', ' ')})"
+        # His clock, not UTC: a 16:00 BST interview was recorded as 15:00, and one after midnight
+        # BST under the previous day's slot (16 Nov).
+        local = datetime.fromisoformat(at.replace("Z", "+00:00")).astimezone(LONDON)
+        day = local.date().isoformat()
+        value = f"{title} ({local.strftime('%Y-%m-%d %H:%M')})"
         as_of = min(day, date.today().isoformat())
         try:
             w = F.write(conn, app, f"interview:{day}", value, sources=[ref], route="calendar", as_of=as_of)

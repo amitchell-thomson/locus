@@ -77,6 +77,13 @@ def event_item(e: dict) -> Item:
         parts.append(f"Where: {e['location']}")
     if e.get("description"):
         parts.append(e["description"])
+    # What kairos filed it under (its `meta.locus`, a registry id): read since 16 Nov; before, every
+    # event had no thing, so a course's brief never listed its lectures under Next and a thing
+    # filter missed every event.
+    from locus.heuris import registry
+
+    locus = (e.get("meta") or {}).get("locus")
+    thing = locus if not family and locus in registry.entries() else None
     return Item(
         ref=f"event:{e['source']}/{e['uid']}#{rid}",
         kind="event",
@@ -84,6 +91,7 @@ def event_item(e: dict) -> Item:
         title=title,
         text="\n".join(parts),
         area=area,
+        thing=thing,
         parent=f"event:{e['source']}/{e['uid']}",
         meta={"source": e.get("source"), "key": e.get("key"), "location": e.get("location"), "family": family,
               "span": e["span"], "recurring": e.get("recurring"), "tentative": e.get("tentative")},

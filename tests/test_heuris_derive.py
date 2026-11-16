@@ -151,3 +151,20 @@ def test_an_interview_event_is_matched_to_its_application_by_its_title():
     assert D.app_for_event("G-Research AI/ML interview", "2026-10-29T09:30", None) == "gresearch-ml"
     assert D.app_for_event("Brevan Howard onsite", "2025-11-03T09:30", None) == "bh-2026"
     assert D.app_for_event("Quant interview", "2026-10-29T09:30", None) is None
+
+
+def test_an_interview_is_recorded_on_his_clock_not_utc(conn):
+    # 16 Nov: a 16:00 BST interview was recorded as 15:00.
+    index(conn, "calendar", [Item(ref="event:careers/J#1", kind="event", at=datetime(2026, 10, 16, 15, tzinfo=timezone.utc),
+                                  title="Jump Trading interview", text="Jump Trading interview", area="Careers")],
+          embed=fake_embed)
+    D.calendar_facts(conn, since="2026-06-01")
+    [f] = [f for f in F.current(conn) if f.slot.startswith("interview:")]
+    assert f.slot == "interview:2026-10-16" and "16:00" in f.value
+
+
+def test_a_recruiting_system_speaks_only_for_the_firm_it_names():
+    m = lambda name, title: D.Message(ref="mail:x/1/1", at="2026-10-01T00:00:00+00:00", sender="noreply@myworkday.com",
+                                      name=name, why="a firm or recruiting system", title=title, text="")
+    assert D.has_authority("millennium", "stage", m("Millennium HR", "An update on your application"))
+    assert not D.has_authority("millennium", "stage", m("Citadel Recruiting", "An update on your application"))

@@ -46,10 +46,16 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("slack-token", re.compile(_B + r"xox[abposr]-[A-Za-z0-9\-]{10,}")),
     ("google-key", re.compile(_B + r"AIza[0-9A-Za-z_\-]{35}\b")),
     ("bearer", re.compile(r"(?i)(" + _B + r"bearer\s+)[A-Za-z0-9._~+/=\-]{16,}")),
+    ("basic-auth", re.compile(r"(?i)(" + _B + r"basic\s+)[A-Za-z0-9+/]{12,}={0,2}")),
+    ("hf-token", re.compile(_B + r"hf_[A-Za-z0-9]{30,}")),
+    # `https://user:pass@host`: the password goes, the user and host stay.
+    ("url-password", re.compile(r"(?i)(\b[a-z][a-z0-9+.\-]*://[^\s:/@]+:)[^\s@/]{3,}(?=@)")),
     # `password: x`, `"api_key": "x"`, `token=x`, `pw is x`: the word is kept, the value goes.
+    # Also the env-file shape `LOCUS_HTTP_TOKEN=x`, `DB_PASSWORD=x` (a word and `_` before the
+    # keyword), which the rule missed until 16 Nov.
     # `\\?["']?` allows the escaped quotes a JSON-encoded line carries.
     ("credential", re.compile(
-        r"(?i)(" + _B + r"(?:password|passwd|passphrase|pwd|pw|secret|client_secret|token|api[_\-]?key|"
+        r"(?i)(" + _B + r"(?:[A-Za-z0-9]+_)*(?:password|passwd|passphrase|pwd|pw|secret|client_secret|token|api[_\-]?key|"
         r"access[_\-]?key|auth[_\-]?token)\b(?:\\?[\"'])?\s*(?:[:=]|\bis\b)\s*(?:\\?[\"'])?)"
         r"([^\s\"'\\,;}{\]\[)(<>]{6,})")),
 ]
@@ -81,7 +87,7 @@ def scrub(text: str, known: list[str] | None = None) -> tuple[str, dict[str, int
             note("known", text.count(s))
             text = text.replace(s, "[redacted:known]")
     for kind, pat in _PATTERNS:
-        if kind in ("bearer", "credential"):
+        if kind in ("bearer", "credential", "basic-auth", "url-password"):
             def keep_label(m: re.Match[str], kind: str = kind) -> str:
                 value = m.group(2) if kind == "credential" else m.group(0)[len(m.group(1)):]
                 if kind == "credential" and _NOT_A_SECRET.match(value):

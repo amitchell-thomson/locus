@@ -55,3 +55,17 @@ def test_a_scrubbed_transcript_line_is_still_json():
     for secret_bit in ("hunter2", "q8w7e6", "Ab1_Ab1_", "x9Yx9Y", "aaaaaaaa", "ABCDEFGHIJKLMNOP",
                        "abcdefghij", "BBBBBBBB", "ghi_jkl", "b3BlbnNzaC1rZXk", "a1a1a1a1"):
         assert secret_bit not in out, secret_bit
+
+
+def test_env_file_lines_basic_auth_url_passwords_and_hf_tokens_are_scrubbed():
+    # 16 Nov: `NAME_TOKEN=value` (every env file) passed through the credential rule untouched.
+    for line, gone in [("LOCUS_HTTP_TOKEN=abcdefghijklmnopqrstuvwx", "abcdefghijklmnop"),
+                       ("export DB_PASSWORD=hunter2hunter2", "hunter2hunter2"),
+                       ("CANVAS_TOKEN=12345~abcdefghijklmnopqrstuv", "abcdefghijklmnopq"),
+                       ("HF_TOKEN=hf_abcdefghijklmnopqrstuvwxyzABCDEF12", "hf_abcdefghij"),
+                       ("Authorization: Basic dXNlcjpwYXNzd29yZDEyMw==", "dXNlcjpwYXNz"),
+                       ("git clone https://alec:s3cr3tpw@github.com/x/y", "s3cr3tpw")]:
+        out, _ = scrub(line)
+        assert gone not in out, out
+    for line in ["max_tokens: 4096", "the token count is 5", "basic idea of the thing"]:
+        assert scrub(line)[0] == line

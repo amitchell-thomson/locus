@@ -38,11 +38,10 @@ These are what the spec is for. Every decision below is checked against them.
 
 **G1. Quant interview mastery** for the firms after Millennium: Jump, HRT, Tower, G-Research and
 the like (your goal, fact:196: "work as a QT or QR alongside a systematic pod at an HFT firm").
-**Master by: the start of the Millennium internship** (your words, 16 Nov: the gap before it is
-"a blank period, and after millennium I will want to jump into the interview processes";
-fact:423). The start date is not in locus yet (the offer letter will have it); until then the
-goal uses the end of the gap after Trinity exams (weeks 8 and 9) as its date. The work falls in the
-Christmas and Easter vacations, a few hours a week in term, and the post-exam gap as the peak.
+**Master by: the end of Trinity 2027 exams.** Millennium starts the Monday after they finish
+(fact:424), and the days between are for resting, not prep; after Millennium the interview
+processes start (fact:423). So the work is spread over this term, the Christmas and Easter
+vacations and Hilary, at the pace below, with nothing planned in exam weeks.
 - *What the evidence says to target.* The Jump feedback call (src:614, 23 Oct): "v strong
   quantitatively", "areas for growth: programming", "do data structures and algorithms". The
   second feedback note (src:623): "a lot of claude usage, do the extra step of digging into things,
@@ -94,6 +93,8 @@ gives way first when the week is full. Before the paper draft is final would be 
 - *Practice:* explain-back questions on the tablet ("why does the barrier gate give 200 times
   better gates than detuning?"), derivations, and "defend every claim" questions taken from the
   paper draft, marked against the repo's own findings.
+
+**Pace** (fact:425): **5 hours a week for G1, 5 for G2, 1 for G3**, changeable at any time (L-D7).
 
 **Priority** (fact:423): G1 and G2 on one level, G3 below. When a week cannot hold everything,
 `plan` shortens G3 first and says so.
@@ -151,7 +152,16 @@ submit a file (from a practice folder in the repo, never one Claude wrote), it i
 exercise's tests where it has them, then reviewed against the reference; the test result is
 deterministic, the review is advice.
 
-**L-D7. Time.** The curriculum's total hours and the master-by date give a weekly load; approving
+**L-D7. Time.** Each goal has a **pace**: hours a week, which you set and can change whenever you
+like (your words, 16 Nov: "easy to change if I want to ramp up or down the practice at any point
+in time"). Changing it takes one step from anywhere: `+`/`-` on a goal in the Learning screen (an
+hour a step), `locus learn pace g1 7`, or telling any Claude ("ramp interview prep up to 8 hours
+for the vacation"), through a `set_pace` tool that applies at once and can be undone (a pace is
+small scheduling, so it does not wait in Approve). A change re-spreads the goal's open tasks with
+`plan` and re-draws the pace line ("at 5 h a week: done by 10 June; at 3 h: 4 weeks late"). A pace
+can be set for a period ("8 h until 10 Jan, then 5"), so a vacation ramp ends by itself.
+
+The curriculum's total hours and the master-by date give the load it needs; approving
 the goal creates kairos tasks per topic (with `locus` = the goal's thing, estimates from the hours,
 due dates from the order), and `plan` places them. Revision respects your rule (28 Oct): none in
 Michaelmas or Hilary term for revision goals; G1 to G3 are not revision, so they take a few hours a
@@ -196,8 +206,9 @@ repo. That code is the product. It is reviewed and marked the same way, but it l
 
 Each step ends with a printed check against real data.
 
-**L1. Learning state.** The tables (L-D8), backup and restore of them, and `locus learn` (list,
-show). Check: an empty goal round-trips through a backup.
+**L1. Learning state.** The tables (L-D8, with a `pace` per goal and its dated changes), backup
+and restore of them, and `locus learn` (list, show, pace). Check: an empty goal round-trips through
+a backup, and a pace change is logged with its date.
 
 **L2. A goal becomes a proposed curriculum** (L-D2, L-D3). `propose_goal` and `locus learn
 propose`; evidence gathering; the Opus call with a schema; the grounding check and its gate; the
@@ -271,9 +282,9 @@ milestones, and G3 from QUAST's repo; both approved, one marked round each. Chec
 
 ## Still open
 
-- The weekly hours each goal takes in term and in the vacation: the proposal in L2 will suggest
-  them from the dates and the curriculum's size, for you to adjust.
-- Millennium's start date, from the offer letter, to pin G1's date.
+- Answered too: G1 ends with Trinity exams (Millennium starts the Monday after, fact:424); pace 5,
+  5 and 1 hours a week, changeable at any time (fact:425).
+- Nothing else blocks approval.
 
 ## Progress
 

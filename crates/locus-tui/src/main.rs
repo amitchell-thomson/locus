@@ -142,6 +142,9 @@ fn main() -> Result<()> {
                 apply_live(&mut app, Live::Facts(f));
             }
             apply_live(&mut app, Live::System(Box::new(locus_tui::live::fetch_system())));
+            // The learning goals too, so `--dump learning --live` and Approve's curricula show
+            // what the window shows (the L3 check ran against the server and missed the window).
+            apply_live(&mut app, Live::Learning(locus_tui::live::fetch_learning()));
             let others = locus_tui::live::scan_unregistered_repos(&app.fixtures.registry);
             apply_live(&mut app, Live::Others(others));
         }

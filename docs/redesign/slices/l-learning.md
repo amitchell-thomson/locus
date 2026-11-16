@@ -1,7 +1,8 @@
 # L: learning, from a goal to a curriculum you work through
 
 **State:** approved 16 Nov 2026 ("spec fine"), with one amendment: the learning documents live in
-a `Learning/` folder in `~/files` and on the tablet, kept in step like the rest (L-D12) ·
+`~/files/Learning/` is the one place for documents and code, a git repo synced with the tablet
+like the rest (L-D11, L-D12) ·
 **Written:** 2026-11-16 · **Runs in:** `claude` (locus-dev)
 
 **From:** the plan (C.10 interview prep, C.11 the learning system; heuris.tex §E "one shape",
@@ -190,31 +191,39 @@ copies it. Tables: `goals`, `topics` (the tree, per goal, with tracks shared by 
 contract), 4 to 8 questions mixing topics by weight and due review, space to write under each, a
 footer with its id so the readback finds it. Coding exercises are not sheets.
 
-**L-D11. Where code practice lives: a `learning` repo** (your lean, and I agree). Exercises (a
-stub, its tests, your solution) and the code half of each sheet go there, one folder per track.
-Why it is right:
-- the repo's own `CLAUDE.md` can say "Claude never writes solution code here", which is the G2 rule
-  made enforceable;
-- exercises with tests stay out of project repos, whose history stays the project's;
-- as a registry repo, kairos measures the time you spend in it, which is honest practice time.
+**L-D11. Code practice lives in the same place** (your amendment, 16 Nov: "I do not want two
+different learning locations, that learning folder in files can itself be a repo"). See L-D12:
+`~/files/Learning/` is one folder and one git repo, holding the documents and the exercises.
 
-**L-D12. Where the documents live: `Learning/`, in `~/files` and on the tablet** (your amendment,
-16 Nov: "a directory under files that is also on the remarkable and does all of the regular
-syncing, so that I can see the documents in both").
-- One top-level folder, one subfolder per goal: `~/files/Learning/<goal>/` and the same path on
-  the tablet, each with `sheets/`, `explainers/` and `marked/`. Top level rather than under an
-  area, because goals cross areas (interview prep is Careers, OXDAQ and QUAST are Projects) and
-  share tracks; one place to look.
-- It syncs like `Studies/`: a sheet or explainer locus writes lands in both; a PDF you drop into
-  `~/files/Learning/<goal>/` reaches the tablet.
+**L-D12. One place for everything: `~/files/Learning/`, a git repo, in `~/files` and on the
+tablet** (your amendments, 16 Nov: "a directory under files that is also on the remarkable and
+does all of the regular syncing, so that I can see the documents in both", and no second
+location for code).
+- **Layout.** One subfolder per goal, `~/files/Learning/<goal>/`, each with `sheets/`,
+  `explainers/` and `marked/` (PDFs) and `code/` (an exercise per folder: a stub, its tests, your
+  solution). Top level rather than under an area, because goals cross areas (interview prep is
+  Careers, OXDAQ and QUAST are Projects) and share tracks.
+- **The whole folder is one git repo**, a registry entry (`learning`, kind repo) so your commits
+  and exercises are indexed and searchable, and kairos counts the time you spend in it (it already
+  matches a session in any folder named `learning`). Its `CLAUDE.md` says the rule that makes G2
+  work: Claude never writes solution code here; it sets exercises, reviews and marks. Generated
+  PDFs are ignored by git (`*.pdf` in `.gitignore`): they are rebuilt from locus and synced, not
+  versioned.
+- **The sync looks inside it.** `files_sync` today treats any folder with a `.git` as code and
+  never looks inside (`_OPAQUE_MARKERS`), so `Learning/` is the one exception: its PDFs move to
+  and from the tablet like `Studies/`; code and `.git` never leave the laptop's repo (and never
+  reach the tablet). `Learning/` joins the top-level folders the sync knows (today Studies,
+  Projects, Careers, Personal).
+- **Indexing reads it where it is.** `repos_push` reads registry repos only under
+  `~/local-projects`; a registry entry gains an optional `path`, and `learning` sets it to
+  `~/files/Learning`.
 - **Your rule of 14 Nov holds** (P-D0): only clean PDFs cross. Your answers in ink stay on the
   tablet and are read back into locus; `~/files` keeps the clean sheet. A marked sheet is a new
   clean PDF locus writes (your answer transcribed, the mark and the reason beside it), in
   `marked/`, so you can see the marking on the laptop too.
-- Capture learns the folder: it reads `Learning/` (today it reads only Studies, Projects, Careers,
-  Inbox and Reading) and treats a sheet there as locus's own document, so your ink on it is read
-  as answers to that sheet (matched by the id in its footer).
-- Code exercises stay in the `learning` repo (L-D11): code is not read on paper.
+- **Capture learns the folder:** it reads `Learning/` on the tablet (today it reads only Studies,
+  Projects, Careers, Inbox and Reading) and treats a sheet there as locus's own document, so your
+  ink on it is read as answers to that sheet (matched by the id in its footer).
 
 One correction: **the "build" half of each G2 round belongs in OXDAQ's own repo**, not the learning
 repo. That code is the product. It is reviewed and marked the same way, but it lives where it runs.
@@ -225,9 +234,12 @@ repo. That code is the product. It is reviewed and marked the same way, but it l
 
 Each step ends with a printed check against real data.
 
-**L1. Learning state.** The tables (L-D8, with a `pace` per goal and its dated changes), backup
-and restore of them, and `locus learn` (list, show, pace). Check: an empty goal round-trips through
-a backup, and a pace change is logged with its date.
+**L1. Learning state and its folder.** The tables (L-D8, with a `pace` per goal and its dated
+changes), backup and restore of them, and `locus learn` (list, show, pace); `~/files/Learning/`
+made as a git repo with its `CLAUDE.md` and `.gitignore`, a registry entry with `path`, the sync's
+exception for it, and `repos_push` reading it. Check: an empty goal round-trips through a backup,
+a pace change is logged with its date, a PDF dropped in `Learning/` reaches the tablet while a
+`.py` beside it does not.
 
 **L2. A goal becomes a proposed curriculum** (L-D2, L-D3). `propose_goal` and `locus learn
 propose`; evidence gathering; the Opus call with a schema; the grounding check and its gate; the
@@ -299,7 +311,7 @@ milestones, and G3 from QUAST's repo; both approved, one marked round each. Chec
 1. G1 by the start of Millennium; G2 roughly before Trinity term, no hard date; G3 little and
    often, lowest priority. G1 and G2 share the top priority.
 2. G2 follows a reopened OXDAQ plan, in rounds of concepts then a part built (step L8).
-3. A `learning` repo for exercises; OXDAQ's build code stays in OXDAQ (L-D11).
+3. One place: `~/files/Learning/`, a git repo holding documents and exercises; OXDAQ's build code stays in OXDAQ (L-D11, L-D12).
 4. The Feedback notebook in Careers/Jump Trading is the main feedback source.
 
 ## Still open

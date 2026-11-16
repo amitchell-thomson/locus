@@ -142,3 +142,28 @@ def test_a_curriculum_keeps_only_what_its_evidence_holds(conn):
     C.propose(conn, "interview-prep", refs=["src:614"], queries=["feedback"], ask=ask, embed=embed,
               rerank=lambda q, hits: hits, today=date(2026, 11, 16))
     assert conn.execute("SELECT COUNT(*) FROM topics WHERE goal='interview-prep'").fetchone()[0] == 3
+
+
+def test_the_learning_screen_reads_the_curriculum_depth_first(conn):
+    import json
+    import subprocess
+
+    from locus.heuris import curriculum as C
+
+    embed = _seed(conn)
+    L.add_goal(conn, "interview-prep", "Quant interview mastery", priority=1)
+    L.set_pace(conn, "interview-prep", 5, since="2026-11-16")
+    reply = {"summary": "DSA first.", "topics": [
+        {"key": "dsa", "track": "data-structures", "title": "DSA", "hours": 30, "weight": 3, "why": "named",
+         "evidence": [{"ref": "src:614#s0", "quote": "Do data structures and algorithms"}]},
+        {"key": "trees", "parent": "dsa", "track": "data-structures", "title": "Trees", "hours": 30, "weight": 2,
+         "why": "part", "evidence": [{"ref": "src:614#s0", "quote": "Areas for growth - programming"}]}]}
+    C.propose(conn, "interview-prep", refs=["src:614"], queries=["x"], ask=lambda s, u: json.dumps(reply),
+              embed=embed, rerank=lambda q, h: h)
+    out = C.export(conn)
+    [g] = out["goals"]
+    assert g["state"] == "proposed" and g["summary"] == "DSA first." and "about 6 weeks" in g["pace"]
+    assert [(i["what"], i["depth"]) for i in g["syllabus"]] == [("DSA", 0), ("Trees", 1)]
+    assert g["syllabus"][1]["quote"] == "Areas for growth - programming" and out["tracks"][0]["id"] == "data-structures"
+    # the shape the Rust contract accepts (deny_unknown_fields): checked by the TUI's own test
+    assert set(g) <= {"id", "title", "by", "state", "syllabus", "pace", "summary"}

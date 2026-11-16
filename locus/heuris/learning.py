@@ -122,6 +122,15 @@ def add_goal(conn: sqlite3.Connection, gid: str, title: str, *, master_by: str |
     return get_goal(conn, gid)
 
 
+def set_notes(conn: sqlite3.Connection, gid: str, notes: str) -> Goal:
+    """What steers the goal's curriculum, in his words (16 Nov: "get rid of weekly mocks"); the
+    next proposal reads it."""
+    get_goal(conn, gid)
+    with conn:
+        conn.execute("UPDATE goals SET notes=?, changed=? WHERE id=?", (notes.strip(), _now(), gid))
+    return get_goal(conn, gid)
+
+
 def set_state(conn: sqlite3.Connection, gid: str, state: str) -> Goal:
     if state not in STATES:
         raise LearningError(f"state is one of {', '.join(STATES)}")

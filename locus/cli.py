@@ -350,6 +350,8 @@ def cmd_learn(args) -> None:
                 print(f"Proposed: {p.kept} topics from {len(p.evidence)} pieces of evidence; "
                       f"{len(p.dropped)} quotes or topics dropped by the check.\n")
                 print(C.render(conn, args.goal))
+            elif a == "export":
+                print(_json.dumps(C.export(conn)))
             elif a == "curriculum":
                 print(C.render(conn, args.goal, state=args.value or "proposed"))
             elif a == "list":
@@ -371,6 +373,9 @@ def cmd_learn(args) -> None:
                 print(f"Pace: {L.describe(g)}")
             elif a == "state":
                 print(f"Now: {L.describe(L.set_state(conn, args.goal, args.value))}")
+            elif a == "note":
+                g = L.set_notes(conn, args.goal, args.value or "")
+                print(f"Notes for {g.id}: {g.notes}")
         except L.LearningError as e:
             raise SystemExit(str(e))
 
@@ -1659,7 +1664,7 @@ def main(argv=None) -> None:
     phe.set_defaults(func=cmd_heuris)
 
     ple = sub.add_parser("learn", help="spec L: learning goals and their pace (hours a week)")
-    ple.add_argument("action", choices=["list", "show", "add", "pace", "state", "propose", "curriculum"])
+    ple.add_argument("action", choices=["list", "show", "add", "pace", "state", "note", "propose", "curriculum", "export"])
     ple.add_argument("--evidence", nargs="*", help="propose: pointers it must use (src:623, fact:196)")
     ple.add_argument("--query", action="append", help="propose: what to search for, instead of the default")
     ple.add_argument("goal", nargs="?", help="a goal id: interview-prep, cpp-oxdaq, quast")

@@ -163,7 +163,7 @@ def gather(conn: sqlite3.Connection, goal: L.Goal, *, refs: list[str] = (), quer
                               (goal.thing, f"doc:{goal.thing}/state.md%")):
             add(_item(conn, r[0]))
     for f in F.current(conn, "me"):
-        if f.slot.split(":")[0] in ("goal", "education", "decision", "plan"):
+        if f.slot.split(":")[0] in ("goal", "education", "decision", "plan", "preference", "constraint"):
             add([Piece(f"fact:{f.id}", f"me · {f.slot}", f.value)])
     total, kept = 0, []
     for p in out:
@@ -321,3 +321,42 @@ def render(conn: sqlite3.Connection, gid: str, *, state: str = "proposed") -> st
         dropped = json.loads(cur[1])
         out.append(f"\nDropped by the evidence check: {len(dropped)} (`locus gates` has them)")
     return "\n".join(out)
+
+
+def export(conn: sqlite3.Connection) -> dict:
+    """The Learning screen's contract (`locus_contract::Learning`): goals, each with its
+    curriculum depth first (the proposed one while it waits, else the current), and the tracks
+    they name. Confidence is 0 until marked practice sets it (L-D5); there are no sheets before L4."""
+    ensure(conn)
+    goals, tracks = [], {}
+    for g in L.goals(conn):
+        state = {"proposed": "proposed", "done": "done"}.get(g.state, "active")
+        tstate = "proposed" if g.state == "proposed" else "current"
+        rows = conn.execute("SELECT id, parent, track, title, hours, weight, confidence FROM topics "
+                            "WHERE goal=? AND state=? ORDER BY ord", (g.id, tstate)).fetchall()
+        kids: dict = {}
+        for r in rows:
+            kids.setdefault(r[1], []).append(r)
+        items: list[dict] = []
+
+        def walk(parent, depth):
+            for tid, _, track, title, hours, weight, conf in kids.get(parent, []):
+                ev = conn.execute("SELECT ref, quote, why FROM topic_evidence WHERE topic=? LIMIT 1", (tid,)).fetchone()
+                items.append({"track": track, "what": title, "hours": float(hours), "from": ev[0] if ev else "",
+                              "depth": min(depth, 255), "why": ev[2] if ev else None,
+                              "quote": ev[1] if ev else None, "weight": float(weight)})
+                tracks.setdefault(track, {"id": track, "name": track.replace("-", " "),
+                                          "confidence": float(conf or 0.0), "history": [], "sessions": [],
+                                          "open_misses": 0})
+                walk(tid, depth + 1)
+
+        walk(None, 0)
+        cur = conn.execute("SELECT summary FROM curricula WHERE goal=? ORDER BY id DESC LIMIT 1", (g.id,)).fetchone()
+        goal = {"id": g.id, "title": g.title, "state": state, "syllabus": items,
+                "pace": pace_line(g, leaf_hours(conn, g.id, state=tstate))}
+        if g.master_by:
+            goal["by"] = g.master_by
+        if cur:
+            goal["summary"] = cur[0]
+        goals.append(goal)
+    return {"goals": goals, "tracks": list(tracks.values()), "sheets": []}

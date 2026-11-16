@@ -345,3 +345,16 @@ milestones, and G3 from QUAST's repo; both approved, one marked round each. Chec
   registry check, the locus window, kairos's time measurement and `repos_push` find it by path.
 - The sync knows `Learning/`: its goal folders need no registry entry, its PDFs move like
   `Studies/`, and `code/` never leaves the laptop (`tests/test_learning.py`).
+
+**L2 done, waiting for his reading (16 Nov 2026).** `locus learn propose <goal>`
+(`locus/heuris/curriculum.py`): evidence gathered from what he names, search over his notes, files
+and docs, the goal's repo, and his facts; one Opus call (cached system prompt); every topic's
+quote checked against the evidence it cites (`learning.topic_quote` in `locus gates`); stored as
+`proposed` with a pace line; `locus learn curriculum <goal>` shows it.
+- **`interview-prep`, proposed from 46 pieces** (the Jump Feedback notebook src:623, the call
+  note src:614, the June prep plans src:460, 461, 463, his A1 notes): 22 topics, 0 dropped by the
+  check, 144 h, which at 5 h a week ends around 5 June 2027. DSA by hand (36 h, weight 3) and
+  probability and EV (38 h) lead; regression 16 h; linear algebra and optimisation kept warm
+  (10 h); project defence 16 h; mocks, market making and arithmetic 28 h. $0.29, 53 s.
+- **Found on the first run:** three topics cited the Learning spec itself, Claude's words about
+  his plan. locus's own design documents are no longer evidence (`doc:locus/` excluded).

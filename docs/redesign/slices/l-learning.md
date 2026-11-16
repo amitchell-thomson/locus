@@ -1,7 +1,8 @@
 # L: learning, from a goal to a curriculum you work through
 
-**State:** second draft, with your answers of 16 Nov (dates, priorities, the C++ and OXDAQ cycle,
-the repo, the feedback note) · **Written:** 2026-11-16 · **Runs in:** `claude` (locus-dev)
+**State:** approved 16 Nov 2026 ("spec fine"), with one amendment: the learning documents live in
+a `Learning/` folder in `~/files` and on the tablet, kept in step like the rest (L-D12) ·
+**Written:** 2026-11-16 · **Runs in:** `claude` (locus-dev)
 
 **From:** the plan (C.10 interview prep, C.11 the learning system; heuris.tex §E "one shape",
 revision and the module cycle), the order of 13 Nov (C, P, then L), and your words of 16 Nov:
@@ -197,6 +198,24 @@ Why it is right:
 - exercises with tests stay out of project repos, whose history stays the project's;
 - as a registry repo, kairos measures the time you spend in it, which is honest practice time.
 
+**L-D12. Where the documents live: `Learning/`, in `~/files` and on the tablet** (your amendment,
+16 Nov: "a directory under files that is also on the remarkable and does all of the regular
+syncing, so that I can see the documents in both").
+- One top-level folder, one subfolder per goal: `~/files/Learning/<goal>/` and the same path on
+  the tablet, each with `sheets/`, `explainers/` and `marked/`. Top level rather than under an
+  area, because goals cross areas (interview prep is Careers, OXDAQ and QUAST are Projects) and
+  share tracks; one place to look.
+- It syncs like `Studies/`: a sheet or explainer locus writes lands in both; a PDF you drop into
+  `~/files/Learning/<goal>/` reaches the tablet.
+- **Your rule of 14 Nov holds** (P-D0): only clean PDFs cross. Your answers in ink stay on the
+  tablet and are read back into locus; `~/files` keeps the clean sheet. A marked sheet is a new
+  clean PDF locus writes (your answer transcribed, the mark and the reason beside it), in
+  `marked/`, so you can see the marking on the laptop too.
+- Capture learns the folder: it reads `Learning/` (today it reads only Studies, Projects, Careers,
+  Inbox and Reading) and treats a sheet there as locus's own document, so your ink on it is read
+  as answers to that sheet (matched by the id in its footer).
+- Code exercises stay in the `learning` repo (L-D11): code is not read on paper.
+
 One correction: **the "build" half of each G2 round belongs in OXDAQ's own repo**, not the learning
 repo. That code is the product. It is reviewed and marked the same way, but it lives where it runs.
 
@@ -218,11 +237,14 @@ quote is there; you read it.
 **L3. Approval to time** (L-D7). Approving writes goal and topics and creates kairos tasks; `plan`
 places them. Check: G1 approved, its first weeks visible in the calendar at the weekly load shown.
 
-**L4. Sheets out** (L-D10, L-D4). The baseline sheet and practice sheets, answer keys stored first,
-sent with `to_remarkable`, tracked in `sheets`. Check: G1's baseline on the tablet.
+**L4. Sheets out** (L-D10, L-D4, L-D12). The `Learning/` folder in `~/files`, on the tablet and in
+the sync; the baseline sheet and practice sheets, answer keys stored first, written to
+`Learning/<goal>/sheets/`, tracked in `sheets`. Check: G1's baseline on the tablet and in
+`~/files`.
 
-**L5. Ink back and marked** (L-D6). Loop B transcription of a sheet; marking against the key;
-the marked sheet in Approve; accepted marks move confidence (L-D5). Check: your answers to G1's
+**L5. Ink back and marked** (L-D6, L-D12). Capture reads `Learning/`; Loop B transcription of a
+sheet; marking against the key; the marked sheet in Approve; accepted marks move confidence
+(L-D5) and write the marked PDF to `marked/`. Check: your answers to G1's
 baseline marked, corrected where wrong, confidence set.
 
 **L6. The Learning screen live** (L-D9). Fixtures go; goals, pace, topics, history. Check: the

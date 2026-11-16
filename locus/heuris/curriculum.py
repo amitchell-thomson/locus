@@ -163,7 +163,7 @@ def gather(conn: sqlite3.Connection, goal: L.Goal, *, refs: list[str] = (), quer
                               (goal.thing, f"doc:{goal.thing}/state.md%")):
             add(_item(conn, r[0]))
     for f in F.current(conn, "me"):
-        if f.slot.split(":")[0] in ("goal", "education", "decision", "plan", "preference", "constraint"):
+        if f.slot.split(":")[0] in ("goal", "education", "decision", "plan", "preference", "constraint", "experience"):
             add([Piece(f"fact:{f.id}", f"me · {f.slot}", f.value)])
     total, kept = 0, []
     for p in out:

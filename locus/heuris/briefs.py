@@ -81,12 +81,15 @@ def subjects() -> list[str]:
 # the parts rendered when read
 
 
-def now_lines(conn: sqlite3.Connection, subject: str) -> list[str]:
+def now_lines(conn: sqlite3.Connection, subject: str, env=None) -> list[str]:
     fs = F.current(conn, subject)
     if subject == "me":  # his brief carries where each application stands
         apps = [i for i, e in registry.entries().items() if e.get("kind") == "application"]
         fs += [f for f in F.current(conn) if f.subject in apps and f.slot in ("stage", "turn")]
-    lines = [f"{'' if f.subject == subject else f.subject + ' · '}{f.slot} = {f.value} (as of {f.as_of}) [fact:{f.id}]"
+    def val(f) -> str:
+        return env.wrap(f.value) if env is not None and f.route == "mail" else f.value
+
+    lines = [f"{'' if f.subject == subject else f.subject + ' · '}{f.slot} = {val(f)} (as of {f.as_of}) [fact:{f.id}]"
              for f in sorted(fs, key=lambda f: (f.subject != subject, f.subject, ":" in f.slot, f.slot))]
     st = conn.execute("SELECT ref, at, text FROM items WHERE kind='doc' AND ref=?", (f"doc:{subject}/state.md",)).fetchone()
     if st:
@@ -227,15 +230,22 @@ def run_briefs(conn: sqlite3.Connection, *, force: bool = False, submit_new: boo
 # reading one
 
 
-def render(conn: sqlite3.Connection, subject: str, today: date | None = None, *, with_now: bool = True) -> str:
+def render(conn: sqlite3.Connection, subject: str, today: date | None = None, *, with_now: bool = True,
+           env=None) -> str:
     """The brief as `context(about=...)` shows it: Now and Next exact and live, Open and Recent as
-    last built, and every record written since."""
+    last built, and every record written since. With `env` (tools.Envelope), a record of a mail
+    thread is enveloped: a model's paraphrase of untrusted text (H2.6, 16 Nov)."""
     ensure(conn)
+
+    def rec(e: str, t: str, u: str) -> str:
+        t = env.wrap(t) if env is not None and u.startswith("mail:") else t
+        return f"  - {e[:10]} {t} [record:{u}]"
+
     name = "you (Alec)" if subject == "me" else registry.entries().get(subject, {}).get("name", subject)
     row = conn.execute("SELECT open, recent, built_at FROM briefs WHERE subject=?", (subject,)).fetchone()
     out = [f"Brief: {name}"]
     if with_now:
-        now = now_lines(conn, subject)
+        now = now_lines(conn, subject, env)
         out.append("Now (facts, exact; each with its date and pointer):")
         out += [f"  - {x}" for x in now] or ["  - no facts recorded"]
     if row:
@@ -247,11 +257,11 @@ def render(conn: sqlite3.Connection, subject: str, today: date | None = None, *,
         newer = R.recent(conn, None if subject == "me" else subject, after=built, limit=8)
         if newer:
             out.append("Since this brief was built:")
-            out += [f"  - {e[:10]} {t} [record:{u}]" for e, t, _x, u in newer]
+            out += [rec(e, t, u) for e, t, _x, u in newer]
     else:
         recs = R.recent(conn, None if subject == "me" else subject, limit=6)
         out.append("Recent (records, newest first; no brief built yet):")
-        out += [f"  - {e[:10]} {t} [record:{u}]" for e, t, _x, u in recs] or ["  - nothing recorded"]
+        out += [rec(e, t, u) for e, t, _x, u in recs] or ["  - nothing recorded"]
     nxt = next_lines(conn, subject, today)
     out.append("Next:")
     out += [f"  - {x}" for x in nxt] or ["  - nothing booked in the next three weeks"]

@@ -74,14 +74,19 @@ def test_the_whole_flow_ends_in_a_working_token(client):
     assert again.status_code == 400
 
 
-def test_a_wrong_passphrase_issues_nothing_and_five_lock_the_page(client):
+def test_five_wrong_passphrases_end_that_sign_in_but_lock_no_one_else_out(client):
+    # 16 Nov: one global count of 5 let anyone on the Funnel lock claude.ai and the phone out.
     cid = _register(client).json()["client_id"]
     rid = _authorize(client, cid, _pkce()[1])
-    for _ in range(5):
+    for i in range(5):
         r = client.post("/login", data={"req": rid, "passphrase": "guess"}, follow_redirects=False)
         assert r.status_code == 401
+    assert "Too many" in r.text
     r = client.post("/login", data={"req": rid, "passphrase": PHRASE}, follow_redirects=False)
-    assert r.status_code == 401 and "Too many" in r.text
+    assert r.status_code == 401                     # that request is gone
+    mine = _authorize(client, _register(client).json()["client_id"], _pkce()[1])
+    r = client.post("/login", data={"req": mine, "passphrase": PHRASE}, follow_redirects=False)
+    assert r.status_code == 302                     # his own sign-in still works
 
 
 def test_a_client_cannot_register_a_redirect_to_somewhere_else(client):

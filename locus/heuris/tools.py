@@ -115,7 +115,7 @@ def resolve_person(conn: sqlite3.Connection, person: str) -> tuple[list[str], st
         addrs = {r[0] for r in conn.execute(
             "SELECT DISTINCT a.person FROM item_people n JOIN item_people a ON a.item_id = n.item_id "
             "JOIN items i ON i.id = n.item_id WHERE n.person = ? AND n.role='name' AND a.role='from' "
-            "AND json_extract(i.meta, '$.from_name') = ?", (n, n))}
+            "AND lower(json_extract(i.meta, '$.from_name')) = ?", (n, n))}
         people.setdefault(n, set()).update(addrs)
     # The same person under two spellings shares an address; merge those.
     groups: list[tuple[set[str], set[str]]] = []
@@ -280,13 +280,31 @@ def doc_thing(title: str, uri: str) -> str | None:
     return hits.pop() if len(hits) == 1 else None
 
 
-def notes_for_thing(conn: sqlite3.Connection, thing: str, limit: int = 8) -> list[Hit]:
+def _areas() -> dict[str, list[str]]:
+    """Every area id, case as stored, each with its streams (Personal's)."""
+    import tomllib
+
+    path = Path(__file__).resolve().parents[2] / "taxonomy" / "areas.toml"
+    out: dict[str, list[str]] = {}
+    for a in tomllib.loads(path.read_text()).get("areas", []):
+        out[a["id"]] = list(a.get("streams") or [])
+        for st in out[a["id"]]:
+            out.setdefault(st, [])
+    return out
+
+
+def notes_for_thing(conn: sqlite3.Connection, thing: str, limit: int = 8, *, area: str | None = None,
+                    since: str | None = None, until: str | None = None) -> list[Hit]:
     """His notes about `thing` (a notebook's header names it), one hit per note: for a query that
     names an item whose notes may never say its name ("Jump feedback notes" reached the
     "Feedback" notebook only at call 10, H1 re-run). From heuris's own items since P7."""
+    # The search's own area and dates apply here too: these notes were added after the filtered
+    # retrieval and ignored them (a Careers search since 14 Nov returned B15 notes of 11 Nov).
+    where, params = _filters(None, area, None, since, until, None)
     rows = conn.execute(
-        "SELECT ref, at, title, text, meta FROM items WHERE source='library' AND kind='note' AND thing=? "
-        "AND json_extract(meta,'$.lead')=1 ORDER BY at_ts DESC LIMIT ?", (thing, limit)).fetchall()
+        "SELECT i.ref, i.at, i.title, i.text, i.meta FROM items i WHERE i.source='library' AND i.kind='note' "
+        f"AND i.thing=? AND json_extract(i.meta,'$.lead')=1 AND {where}" +
+        " ORDER BY i.at_ts DESC LIMIT ?", (thing, *params, limit)).fetchall()
     return [Hit(ref=r[0], kind="note", at=r[1], title=r[2], text=(r[3] or "")[:800], thing=thing,
                 meta=json.loads(r[4] or "{}")) for r in rows]
 
@@ -298,8 +316,10 @@ def _rerank(query: str, hits: list[Hit]) -> list[Hit]:
         scores = score_pairs(query, [f"{h.title}\n{h.text[:1500]}" for h in hits])
         for h, s in zip(hits, scores):
             h.score = s
-    except Exception:  # no reranker installed: keep the arm order, which is still a ranking
-        pass
+    except Exception as e:  # no reranker: keep the arm order, but say so where it is seen (§3)
+        import logging
+
+        logging.getLogger("locus.heuris").warning("rerank failed, arm order kept: %s: %s", type(e).__name__, e)
     return sorted(hits, key=lambda h: h.score, reverse=True)
 
 
@@ -308,7 +328,7 @@ def _describe(h: Hit, env: Envelope, i: int) -> str:
     head = f"[{i}] {h.kind} · {_date(h.at)}"
     if h.kind == "mail":
         who = m.get("from_name") or m.get("from") or ""
-        head += f" · from {who}" + (" · needs reply" if m.get("needs_reply") else "")
+        head += f" · from {env.wrap(who)}" + (" · needs reply" if m.get("needs_reply") else "")
     elif h.kind == "chat":
         head += f" · {'you' if m.get('role') == 'you' else 'Claude'} in {m.get('machine')} chat"
         if m.get("session_title"):
@@ -316,7 +336,7 @@ def _describe(h: Hit, env: Envelope, i: int) -> str:
     if h.thing:
         head += f" · {h.thing}"
     elif h.kind == "attachment":
-        head += f" · attached by {m.get('from_name') or m.get('from') or ''}"
+        head += f" · attached by {env.wrap(m.get('from_name') or m.get('from') or '')}"
     title = env.wrap(h.title) if untrusted(h.kind, m) else h.title
     snip = _short(h.text)
     body = env.wrap(snip) if untrusted(h.kind, m) else snip
@@ -330,6 +350,17 @@ def search(conn: sqlite3.Connection, query: str, *, kind: str | None = None, are
         return f"Unknown kind {kind!r}; one of {', '.join(KINDS)}."
     if thing and thing not in registry.entries():
         return f"Unknown thing {thing!r}. Registry ids include: {', '.join(sorted(registry.entries()))}."
+    areas: list[str | None] = [None]
+    if area:
+        # Case-insensitive, checked against the taxonomy, and Personal means its streams too:
+        # Personal mail and events are stored as Travel, Admin, Sport...; "Personal" matched 4
+        # tasks and "studies" matched nothing, silently (16 Nov).
+        known = _areas()
+        match = next((a for a in known if a.lower() == area.strip().lower()), None)
+        if match is None:
+            return f"Unknown area {area!r}; one of {', '.join(known)}."
+        areas = [match] + (known[match] if isinstance(known, dict) else [])
+        area = match
     people_ids = None
     if person:
         people_ids, ask = resolve_person(conn, person)
@@ -343,13 +374,13 @@ def search(conn: sqlite3.Connection, query: str, *, kind: str | None = None, are
         from locus.ingest.embed import embed_texts as embed
     qvec = embed([QUERY_PREFIX + query])[0]
     # One index since P7: library sections are heuris items, filtered in the KNN like the rest.
-    hits = heuris_candidates(conn, query, qvec, kind=kind, area=area, thing=thing, since=since,
-                             until=until, people_ids=people_ids)
+    hits = [h for a in areas for h in heuris_candidates(conn, query, qvec, kind=kind, area=a, thing=thing,
+                                                         since=since, until=until, people_ids=people_ids)]
     # A query that names an item ("Jump feedback notes") also offers that item's own notebook
     # notes, whose text may never say the name (H1 re-run: Y9).
     named = thing or doc_thing(query, "")
     if named and kind in (None, "note") and not person:
-        hits += notes_for_thing(conn, named)
+        hits += [h for a in areas for h in notes_for_thing(conn, named, area=a, since=since, until=until)]
     if not hits:
         return "Nothing found" + (" with those filters." if any([kind, area, thing, person, since, until]) else ".")
     best: dict[str, Hit] = {}
@@ -423,10 +454,21 @@ def open_ref(conn: sqlite3.Connection, ref: str, *, around: int = 3, page: int =
         readable = {}
         for aref, ameta in conn.execute("SELECT ref, meta FROM items WHERE parent=? AND kind='attachment'", (parent,)):
             readable.setdefault(json.loads(ameta).get("message"), []).append(aref)
-        # Paged by whole messages, so no page cuts an envelope in two.
+        # Paged by whole messages, so no page cuts an envelope in two; a message longer than a
+        # page is split into parts, each in its own envelope (one of 119,000 characters came back
+        # as a single "page", 16 Nov).
+        parts_of: list[tuple] = []
+        for r in rows:
+            body = r[3] or ""
+            if len(body) <= PAGE_CHARS:
+                parts_of.append(r)
+                continue
+            pieces = _pages(body)
+            parts_of += [(r[0], r[1], f"{r[2]} (part {k} of {len(pieces)})", piece, r[4])
+                         for k, piece in enumerate(pieces, 1)]
         groups: list[list] = [[]]
         size = 0
-        for r in rows:
+        for r in parts_of:
             n = len(r[3] or "") + 200
             if groups[-1] and size + n > PAGE_CHARS:
                 groups.append([])
@@ -441,8 +483,8 @@ def open_ref(conn: sqlite3.Connection, ref: str, *, around: int = 3, page: int =
             mark = "  ← the one you opened" if r[0] == ref else ""
             if readable.get(r[0]):
                 att += f" (read them: open {', '.join(readable[r[0]])})"
-            out.append(f"\n--- {r[1][:16]} · {m.get('from_name') or ''} <{m.get('from')}>{att}{mark}\n"
-                       + env.wrap(f"Subject: {r[2]}\n\n{r[3]}"))
+            sender = env.wrap(f"{m.get('from_name') or ''} <{m.get('from')}>{att}")
+            out.append(f"\n--- {r[1][:16]} · {sender}{mark}\n" + env.wrap(f"Subject: {r[2]}\n\n{r[3]}"))
         return env.preamble() + "\n".join(out) + _more(ref, p, len(groups))
     if ref.startswith("chat:"):
         row = _item_row(conn, ref)
@@ -450,15 +492,21 @@ def open_ref(conn: sqlite3.Connection, ref: str, *, around: int = 3, page: int =
         rows = conn.execute("SELECT ref, at, text, meta FROM items WHERE parent=? ORDER BY at_ts, id", (parent,)).fetchall()
         if not rows:
             return f"No chat {parent}."
-        idx = next((i for i, r in enumerate(rows) if r[0] == ref), 0)
-        lo, hi = (max(0, idx - around), min(len(rows), idx + around + 1)) if row else (0, len(rows))
+        idx = next((i for i, r in enumerate(rows) if r[0] == ref), None)
+        # A turn opens with the turns around it; the session pointer, or a turn no longer indexed,
+        # opens the whole session. Either way the result is PAGED, never cut: turns were cut at
+        # 6,000 characters with no mark, and a whole session came back as 830 KB (16 Nov).
+        lo, hi = (max(0, idx - around), min(len(rows), idx + around + 1)) if idx is not None else (0, len(rows))
         m0 = json.loads(rows[0][3])
-        out = [f"Chat {parent} (\"{m0.get('session_title') or ''}\", {m0.get('cwd')}), turns {lo + 1}-{hi} of {len(rows)}:"]
+        note = "" if idx is not None or ref == parent else f" ({ref} is not indexed now; the whole session follows)"
+        out = [f"Chat {parent} (\"{m0.get('session_title') or ''}\", {m0.get('cwd')}), turns {lo + 1}-{hi} of {len(rows)}{note}:"]
         for r in rows[lo:hi]:
             m = json.loads(r[3])
             who = "YOU" if m.get("role") == "you" else "CLAUDE"
-            out.append(f"\n--- {who} · {r[1][:16]}{'  ← the one you opened' if r[0] == ref else ''}\n{r[2][:6000]}")
-        return "\n".join(out)
+            out.append(f"\n--- {who} · {r[1][:16]}{'  ← the one you opened' if r[0] == ref else ''}\n{r[2]}")
+        pages = _pages("\n".join(out))
+        p = min(page, len(pages))
+        return pages[p - 1] + _more(ref, p, len(pages))
     row = _item_row(conn, ref)
     if not row:
         return f"Nothing indexed under {ref!r}. Pointers come from search or timeline."
@@ -480,7 +528,7 @@ def _open_source(ref: str, page: int = 1) -> str:
     from locus.config import load
     from locus.db.connection import get_connection
 
-    m = re.match(r"src:(\d+)(?:#s(\d+))?", ref)
+    m = re.fullmatch(r"src:(\d+)(?:#s(\d+))?", ref)
     if not m:
         return f"Bad source pointer {ref!r}; expected src:<doc>#s<section>."
     doc_id, pos = int(m.group(1)), m.group(2)
@@ -493,6 +541,8 @@ def _open_source(ref: str, page: int = 1) -> str:
         head = f"{d['title']} ({d['category']}, {d['source_date'] or 'undated'})\n{d['source_uri']}"
         if pos is None:
             toc = "\n".join(f"  s{s['position']}: {s['title'] or ''}" for s in secs[:80])
+            if len(secs) > 80:
+                toc += f"\n  … {len(secs) - 80} more sections (s80 to s{secs[-1]['position']}): open them by number"
             return f"{head}\n\n{d['thesis'] or ''}\n\nSections (open src:{doc_id}#s<n>):\n{toc}"
         sec = next((s for s in secs if s["position"] == int(pos)), None)
         if not sec:
@@ -571,14 +621,18 @@ def timeline(conn: sqlite3.Connection, about: str, *, since: str | None = None, 
         m = json.loads(meta or "{}")
         extra = ""
         if untrusted(k, m):
-            if k == "mail":
-                extra = f" ({m.get('from_name') or m.get('from')})"
-            title = env.wrap(title)
-        elif k == "chat":
-            extra = " (you)" if m.get("role") == "you" else " (Claude)"
-        if m.get("unit") == "section" and m.get("doc"):
-            ref, title = f"src:{m['doc']}", m.get("doc_title") or title
-        out.append(f"{at[:10]}  {k:6} {_short(title, 110)}{extra}  [{ref}]")
+            # Shortened BEFORE wrapping (16 Nov): cut after, a long subject lost its closing marker
+            # and every line below it read as inside the untrusted envelope. The sender is mail
+            # text too, so it goes inside.
+            sender = f" ({m.get('from_name') or m.get('from')})" if k == "mail" else ""
+            title = env.wrap(_short(title, 110) + sender)
+        else:
+            if k == "chat":
+                extra = " (you)" if m.get("role") == "you" else " (Claude)"
+            if m.get("unit") == "section" and m.get("doc"):
+                ref, title = f"src:{m['doc']}", m.get("doc_title") or title
+            title = _short(title, 110)
+        out.append(f"{at[:10]}  {k:6} {title}{extra}  [{ref}]")
     return env.preamble() + "\n".join(out)
 
 
@@ -594,12 +648,14 @@ def _slot_rank(slot: str) -> int:
     return SLOT_FIRST.index(family) if family in SLOT_FIRST else len(SLOT_FIRST)
 
 
-def facts_block(conn: sqlite3.Connection, subject: str | None = None) -> str:
+def facts_block(conn: sqlite3.Connection, subject: str | None = None, env: Envelope | None = None) -> str:
     """Current facts, grouped by subject: what is true now, each with its date and source. These
     are the record (D3): where a fact and a mail or chat disagree, the newer as-of wins, and the
     fact's own history says what it replaced."""
     from locus.heuris import facts as F
 
+    own = env is None
+    env = env or Envelope()
     try:
         fs = F.current(conn, subject)
     except F.FactError as e:
@@ -626,10 +682,13 @@ def facts_block(conn: sqlite3.Connection, subject: str | None = None) -> str:
         shown = rows if subject or subj == "me" else rows[:PER_SUBJECT]
         for f in shown:
             src = "; ".join(f.sources[:2])
-            out.append(f"    {f.slot} = {f.value}  (as of {f.as_of}; {src}) [fact:{f.id}]")
+            # A value read from mail is a model's reading of untrusted text (H2.6, as `search`
+            # treats it): enveloped, still recalled exactly (16 Nov).
+            value = env.wrap(f.value) if f.route == "mail" else f.value
+            out.append(f"    {f.slot} = {value}  (as of {f.as_of}; {src}) [fact:{f.id}]")
         if len(rows) > len(shown):
             out.append(f"    … {len(rows) - len(shown)} more: facts(subject=\"{subj}\")")
-    return "\n".join(out)
+    return (env.preamble() if own else "") + "\n".join(out)
 
 
 def facts(conn: sqlite3.Connection, subject: str | None = None, slot: str | None = None,
@@ -665,14 +724,15 @@ def context(conn: sqlite3.Connection, about: str | None = None, *, today: date |
         if about.startswith("person:"):
             return facts_block(conn, about)
         if about == "me":
-            return "\n".join(out + ["", briefs.render(conn, "me", today)])
+            body = briefs.render(conn, "me", today, env=env)
+            return env.preamble() + "\n".join(out + ["", body])
         e = registry.entries().get(about)
         if not e:
             return f"Unknown thing {about!r}. Registry ids: {', '.join(sorted(registry.entries()))}, or `me`."
         out.append(f"\n{e.get('name', about)} ({e.get('kind')}, {e.get('area')}, state {e.get('state') or '-'})")
         # The brief (H2.7): Now and Next exact and live, Open and Recent as last built, and any
         # record written since. Then the raw last 30 days, for pointers the brief did not name.
-        out.append(briefs.render(conn, about, today))
+        out.append(briefs.render(conn, about, today, env=env))
         out.append("")
         out.append(timeline(conn, about, since=(today - timedelta(days=30)).isoformat(), limit=25))
         return env.preamble() + "\n".join(out)
@@ -702,11 +762,11 @@ def context(conn: sqlite3.Connection, about: str | None = None, *, today: date |
                             "(kind='task' AND COALESCE(json_extract(meta,'$.status'),'open') != 'open') "
                             "ORDER BY at_ts DESC LIMIT 1", (pid, int(datetime.now(timezone.utc).timestamp()))).fetchone()
         out.append(f"  {e.get('name', pid)}: " + (f"{last[0][:10]} {last[1]}: {_short(last[2], 90)}" if last else "nothing indexed"))
-    out.append("\n" + facts_block(conn))
+    out.append("\n" + facts_block(conn, env=env))
     from locus.heuris import briefs
 
     # His own brief's Open and Recent (H2.7); its Now is the facts just above.
-    out.append("\n" + briefs.render(conn, "me", today, with_now=False))
+    out.append("\n" + briefs.render(conn, "me", today, with_now=False, env=env))
     nr = conn.execute("SELECT DISTINCT parent, title FROM items WHERE kind='mail' AND json_extract(meta,'$.needs_reply')=1 "
                       "ORDER BY at_ts DESC LIMIT 15").fetchall()
     out.append("\nMail tagged needs-reply: " + ("; ".join(env.wrap(t) + f" [{p}]" for p, t in nr) if nr else "none tagged"))
@@ -784,7 +844,10 @@ def waiting(conn: sqlite3.Connection, on: str = "me", days: int = 28, now: datet
                 continue
             who = "you"
         age = max(0, int((now.timestamp() - ts) // 86400))
-        out.append(f"- {at[:10]} ({age} d ago) · {who} · {title}\n  {env.wrap(ask)}\n  open {parent}")
+        head_txt = f"{who} · {title}" if on == "me" else f"you · {env.wrap(title)}"
+        if on == "me":
+            head_txt = env.wrap(head_txt)
+        out.append(f"- {at[:10]} ({age} d ago) · {head_txt}\n  {env.wrap(ask)}\n  open {parent}")
     if not out:
         return ("No one is waiting on a reply from you" if on == "me" else "No unanswered question of yours") + \
             f" in the last {days} days of indexed mail."

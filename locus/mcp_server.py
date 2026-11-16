@@ -32,6 +32,7 @@ are local (Ollama embedding, CPU reranker); the billable `query` tool is retired
 
 from __future__ import annotations
 
+import itertools
 import time
 import traceback
 from pathlib import Path
@@ -116,9 +117,9 @@ def _instrument(fn):
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
-        global _call_seq
-        _call_seq += 1
-        call = _call_seq
+        # One id per call even when tools run in worker threads (a bare += could hand two calls
+        # the same id, and mcp-log would pair the wrong start and end; 16 Nov).
+        call = next(_call_seq)
         digest = mcp_log.arg_digest(kwargs)
         mcp_log.record("start", call=call, tool=fn.__name__, build=_SERVER_BUILD, args=digest)
         started = mcp_log.now()
@@ -146,12 +147,14 @@ def _instrument(fn):
         note = _stale_note()
         if note and isinstance(result, str):
             return f"{note}\n\n{result}"
+        if note and isinstance(result, list):  # markups: text and images
+            return [note, *result]
         return result
 
     return wrapper
 
 
-_call_seq = 0
+_call_seq = itertools.count(1)
 
 
 def _off_loop(fn):

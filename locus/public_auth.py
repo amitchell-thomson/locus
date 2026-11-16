@@ -47,7 +47,13 @@ ACCESS_TTL = 24 * 3600
 REFRESH_TTL = 90 * 24 * 3600
 CODE_TTL = 300
 PENDING_TTL = 600
-LOCKOUT_FAILS, LOCKOUT_WINDOW = 5, 15 * 60
+# Wrong passphrases count against the sign-in request they were typed into, which is dropped
+# after REQUEST_FAILS; the window-wide lock is only a ceiling. With one global count of 5, anyone
+# reaching the Funnel could register a client, fail five times and keep claude.ai and the phone
+# locked out (16 Nov). 30 tries per 15 minutes against a 12-character passphrase is still no
+# brute force.
+REQUEST_FAILS = 5
+LOCKOUT_FAILS, LOCKOUT_WINDOW = 30, 15 * 60
 CLAUDE_CALLBACK = "https://claude.ai/api/mcp/auth_callback"
 
 
@@ -148,6 +154,13 @@ class Provider:
             return None, "This sign-in request has expired. Start again from claude.ai."
         if not hmac.compare_digest(passphrase.encode(), self.passphrase.encode()):
             self.store.fail()
+            req = json.loads(body)
+            req["fails"] = req.get("fails", 0) + 1
+            if req["fails"] >= REQUEST_FAILS:
+                self.store.drop("pending", rid)
+                return None, "Too many wrong passphrases for this sign-in. Start again from claude.ai."
+            left = self.store.conn.execute("SELECT expires_at FROM pending WHERE id=?", (rid,)).fetchone()
+            self.store.put("pending", rid, json.dumps(req), left[0] if left else int(time.time()) + PENDING_TTL)
             return None, "That is not the passphrase."
         self.store.drop("pending", rid)
         req = json.loads(body)

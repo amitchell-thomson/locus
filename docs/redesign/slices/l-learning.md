@@ -358,3 +358,24 @@ quote checked against the evidence it cites (`learning.topic_quote` in `locus ga
   (10 h); project defence 16 h; mocks, market making and arithmetic 28 h. $0.29, 53 s.
 - **Found on the first run:** three topics cited the Learning spec itself, Claude's words about
   his plan. locus's own design documents are no longer evidence (`doc:locus/` excluded).
+- **Re-proposed after his steer (16 Nov):** firms that reward probability, research and coding
+  (fact:445), so no mocks, market making or mental arithmetic; then the questions he was actually
+  asked (fact:448, fact:449) added by hand as topics citing those facts (r² = R², rectangles on a
+  chessboard, dice conditioning, an order-flow processor, yield curves from swaps and their
+  smoothness, data cleaning with logistic regression). 107 h, done around 14 April 2027 at 5 h.
+  His interview experiences are evidence for later proposals.
+
+**L3 built (16 Nov 2026), waiting for his `y`.** `locus/heuris/learning_plan.py`:
+- `locus learn approve <goal>`: proposed topics become current (the earlier current ones
+  `replaced`), the goal active, and each leaf topic a kairos task: estimate its hours, key the
+  goal's `area`, `locus` its thing, a window from walking the curriculum at the pace (a day gives
+  a seventh of that day's weekly pace; at least a week), sent as `earliest_start` and `due`; one
+  `plan` at the end. Written as Alec; each is one low-risk changeset. `goal_tasks` (backed up)
+  keeps topic to task, so approving twice makes nothing twice.
+- `locus learn plan <goal>` previews the windows; `reject` keeps the current curriculum.
+- A pace change re-spreads what is left of the open tasks (kairos task updates now take
+  `earliest_start`, tested in `kairosd/tests/engine.rs`).
+- Approve lists a proposed curriculum (`LEARN`), agreed with `y` there or on the Learning
+  screen; Approve's `Y` skips it (one at a time, like facts).
+- **Open:** topics are scheduled in tree order, so all of probability comes before any DSA.
+  Interleaving the tracks would suit spaced practice better; raised with him.

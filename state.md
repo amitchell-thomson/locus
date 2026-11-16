@@ -19,7 +19,7 @@
 - 2026-11-13: order C, P, L; the Project window goes.
 
 ## Next
-- L (Learning): spec first, for approval; built on the syllabus topics.
+- L (Learning): L1 to L3 built (goals, curricula, agreed curriculum to kairos tasks); interview-prep waits for his `y`; next L4 sheets. Progress in `docs/redesign/slices/l-learning.md`.
 - Then the nightly reading digest: spec first.
 - Then a closing pass over the bug-hunt leftovers and gap list (in this session's report).
 

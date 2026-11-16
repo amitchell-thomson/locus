@@ -546,6 +546,7 @@ fn draw_approve(f: &mut Frame, area: Rect, app: &App) {
                 locus_contract::ApproveKind::MailSend => "mail to send",
                 locus_contract::ApproveKind::MailFiling => "mail to file",
                 locus_contract::ApproveKind::Fact => "fact",
+                locus_contract::ApproveKind::Curriculum => "curriculum",
             };
             format!("{} {name}", g.items.len())
         })

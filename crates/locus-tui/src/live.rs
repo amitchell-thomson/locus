@@ -495,6 +495,57 @@ pub fn fetch_learning() -> Result<locus_contract::Learning, String> {
     serde_json::from_str(&said).map_err(|e| format!("unreadable learning: {e}"))
 }
 
+/// A goal's proposed curriculum onto Approve (spec L3), one item per goal: agreeing it there
+/// or with `y` on the Learning screen makes its kairos tasks.
+pub fn apply_learning_approve(fx: &mut Fixtures, l: &locus_contract::Learning) {
+    use locus_contract::{ApproveDetail, ApproveGroup, ApproveItem, ApproveKind, GoalState};
+    fx.approve.groups.retain(|g| g.kind != ApproveKind::Curriculum);
+    let items: Vec<ApproveItem> = l
+        .goals
+        .iter()
+        .filter(|g| g.state == GoalState::Proposed && !g.syllabus.is_empty())
+        .map(|g| {
+            let pace = g.pace.clone().unwrap_or_default();
+            let tops: Vec<String> = g
+                .syllabus
+                .iter()
+                .filter(|s| s.depth == 0)
+                .map(|s| format!("- {} ({:.0} h)", s.what, s.hours))
+                .collect();
+            ApproveItem {
+                text: format!("{}: {}", g.id, pace),
+                to: Some("kairos tasks".into()),
+                from: "heuris · learning".into(),
+                new: true,
+                date: None,
+                changeset: None,
+                mail: None,
+                fact: None,
+                goal: Some(g.id.clone()),
+                detail: Some(ApproveDetail {
+                    action: "LEARN".into(),
+                    who: g.title.clone(),
+                    subject: format!("{}: the proposed curriculum", g.id),
+                    meta: pace,
+                    reason: g.summary.clone().unwrap_or_default(),
+                    body: format!(
+                        "{}\n\nYes: a kairos task per topic at the goal's pace, planned by kairos. \
+                         The whole tree, with why each topic is there, is on the Learning screen (L).",
+                        tops.join("\n")
+                    ),
+                }),
+            }
+        })
+        .collect();
+    if !items.is_empty() {
+        fx.approve.groups.push(ApproveGroup {
+            kind: ApproveKind::Curriculum,
+            label: None,
+            items,
+        });
+    }
+}
+
 pub fn fetch_facts() -> Result<FactsLive, String> {
     let said = server_locus(&["facts".into(), "queue".into(), "--json".into()])?;
     serde_json::from_str(&said).map_err(|e| format!("unreadable facts: {e}"))
@@ -517,6 +568,7 @@ pub fn apply_facts(fx: &mut Fixtures, facts: &FactsLive) {
             changeset: None,
             mail: None,
             fact: Some(f.id),
+            goal: None,
             detail: Some(ApproveDetail {
                 action: "FACT".into(),
                 who: f.sources.join(", "),

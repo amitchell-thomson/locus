@@ -332,8 +332,11 @@ def export(conn: sqlite3.Connection) -> dict:
     ensure(conn)
     goals, tracks = [], {}
     for g in L.goals(conn):
-        state = {"proposed": "proposed", "done": "done"}.get(g.state, "active")
-        tstate = "proposed" if g.state == "proposed" else "current"
+        # A proposal waiting (a first one, or a re-proposal of an active goal) is what shows, and
+        # what Approve asks about (L3); otherwise the current curriculum.
+        waiting = conn.execute("SELECT 1 FROM topics WHERE goal=? AND state='proposed' LIMIT 1", (g.id,)).fetchone()
+        tstate = "proposed" if waiting or g.state == "proposed" else "current"
+        state = "proposed" if tstate == "proposed" else {"done": "done"}.get(g.state, "active")
         rows = conn.execute("SELECT id, parent, track, title, hours, weight, confidence FROM topics "
                             "WHERE goal=? AND state=? ORDER BY ord", (g.id, tstate)).fetchall()
         kids: dict = {}

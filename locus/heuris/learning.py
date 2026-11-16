@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS goals (
     state      TEXT NOT NULL DEFAULT 'proposed',
     priority   INTEGER NOT NULL DEFAULT 2,
     thing      TEXT,                       -- a registry id it serves (oxdaq's oqts, quast), if any
+    area       TEXT,                       -- Studies, Projects or Careers: its kairos tasks' key
     notes      TEXT,
     created    TEXT NOT NULL,
     changed    TEXT NOT NULL
@@ -69,6 +70,7 @@ CREATE INDEX IF NOT EXISTS pace_goal ON pace(goal, since);
 
 TABLES = ("goals", "topics", "topic_evidence", "pace")
 STATES = ("proposed", "active", "paused", "done", "archived")
+AREAS = ("Studies", "Projects", "Careers")
 _ID = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 
@@ -78,6 +80,9 @@ class LearningError(ValueError):
 
 def ensure(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    # `area` came with L3 (16 Nov): a goal's tasks need a kairos key.
+    if "area" not in {r[1] for r in conn.execute("PRAGMA table_info(goals)")}:
+        conn.execute("ALTER TABLE goals ADD COLUMN area TEXT")
 
 
 def _now() -> str:
@@ -100,14 +105,17 @@ class Goal:
     priority: int
     thing: str | None
     notes: str | None
+    area: str | None = None          # Studies, Projects or Careers (its kairos tasks' key)
     pace: float | None = None        # hours a week now
     pace_until: str | None = None    # when the current pace ends, if it does
 
 
 def add_goal(conn: sqlite3.Connection, gid: str, title: str, *, master_by: str | date | None = None,
              priority: int = 2, thing: str | None = None, notes: str | None = None,
-             state: str = "proposed") -> Goal:
+             state: str = "proposed", area: str | None = None) -> Goal:
     ensure(conn)
+    if area is not None and area not in AREAS:
+        raise LearningError(f"area is one of {', '.join(AREAS)}")
     if not _ID.match(gid):
         raise LearningError(f"goal id {gid!r}: lowercase words joined by hyphens (interview-prep)")
     if state not in STATES:
@@ -116,9 +124,9 @@ def add_goal(conn: sqlite3.Connection, gid: str, title: str, *, master_by: str |
     with conn:
         if conn.execute("SELECT 1 FROM goals WHERE id=?", (gid,)).fetchone():
             raise LearningError(f"there is already a goal {gid!r}")
-        conn.execute("INSERT INTO goals(id, title, master_by, state, priority, thing, notes, created, changed) "
-                     "VALUES (?,?,?,?,?,?,?,?,?)",
-                     (gid, title.strip(), _day(master_by), state, priority, thing, notes, now, now))
+        conn.execute("INSERT INTO goals(id, title, master_by, state, priority, thing, notes, area, created, changed) "
+                     "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                     (gid, title.strip(), _day(master_by), state, priority, thing, notes, area, now, now))
     return get_goal(conn, gid)
 
 
@@ -128,6 +136,15 @@ def set_notes(conn: sqlite3.Connection, gid: str, notes: str) -> Goal:
     get_goal(conn, gid)
     with conn:
         conn.execute("UPDATE goals SET notes=?, changed=? WHERE id=?", (notes.strip(), _now(), gid))
+    return get_goal(conn, gid)
+
+
+def set_area(conn: sqlite3.Connection, gid: str, area: str) -> Goal:
+    if area not in AREAS:
+        raise LearningError(f"area is one of {', '.join(AREAS)}")
+    get_goal(conn, gid)
+    with conn:
+        conn.execute("UPDATE goals SET area=?, changed=? WHERE id=?", (area, _now(), gid))
     return get_goal(conn, gid)
 
 
@@ -174,7 +191,7 @@ def pace_history(conn: sqlite3.Connection, gid: str) -> list[tuple]:
 
 def get_goal(conn: sqlite3.Connection, gid: str) -> Goal:
     ensure(conn)
-    r = conn.execute("SELECT id, title, master_by, state, priority, thing, notes FROM goals WHERE id=?",
+    r = conn.execute("SELECT id, title, master_by, state, priority, thing, notes, area FROM goals WHERE id=?",
                      (gid,)).fetchone()
     if not r:
         known = [x[0] for x in conn.execute("SELECT id FROM goals ORDER BY priority, id")]

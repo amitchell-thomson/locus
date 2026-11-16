@@ -23,9 +23,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import subprocess
-import tomllib
-import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -132,20 +129,7 @@ def fetch_assignments(client, courses: dict[str, dict]) -> dict[str, list[dict]]
     return out
 
 
-def _kairos() -> tuple[str, str]:
-    cfg = tomllib.loads(Path("~/.config/kairos/config.toml").expanduser().read_text())["daemon"]
-    tok = subprocess.run(cfg["token_cmd"], shell=True, capture_output=True, text=True, check=True).stdout.strip()
-    return cfg["url"].rstrip("/"), tok
-
-
-def _call(method: str, path: str, body: dict | None = None, headers: dict | None = None):
-    url, tok = _kairos()
-    req = urllib.request.Request(url + path, method=method,
-                                 data=json.dumps(body).encode() if body is not None else None,
-                                 headers={"Authorization": f"Bearer {tok}", "Content-Type": "application/json",
-                                          "x-kairos-author": "claude", **(headers or {})})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return json.loads(r.read() or b"null")
+from locus.kairos_http import call as _call, kairos as _kairos  # noqa: E402,F401  (moved, spec L3)
 
 
 def kairos_tasks() -> list[dict]:

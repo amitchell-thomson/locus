@@ -800,6 +800,7 @@ impl KairosMcp {
             estimate_min: a.estimate_min,
             remaining_min: a.remaining_min,
             due: a.due,
+            earliest_start: None,
             priority: a.priority,
             splittable: a.splittable,
             min_chunk_min: a.min_chunk_min,

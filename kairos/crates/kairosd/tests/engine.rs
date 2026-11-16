@@ -3076,3 +3076,35 @@ fn claude_removing_a_due_date_waits_for_alec() {
         "still due until he approves"
     );
 }
+
+#[test]
+fn a_tasks_earliest_start_moves_and_clears() {
+    // Spec L3 (16 Nov): a learning goal's pace re-spreads its topics' windows, start and due.
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Claude, &b4(60, "fri 17:00")).unwrap();
+    assert_eq!(r.task.earliest_start, None);
+    let set = e
+        .update_task(
+            Author::Claude,
+            &r.task.id,
+            &kairos_core::api::UpdateTaskReq {
+                earliest_start: Some("thu".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(set.task.earliest_start.is_some());
+    assert_eq!(set.changesets[0].status, Status::Applied, "low risk");
+    let cleared = e
+        .update_task(
+            Author::Claude,
+            &r.task.id,
+            &kairos_core::api::UpdateTaskReq {
+                earliest_start: Some(String::new()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(cleared.task.earliest_start, None);
+}

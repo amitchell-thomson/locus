@@ -309,8 +309,9 @@ fn apply_live(app: &mut App, msg: Live) {
     // Live, Approve holds only what kairos, keryx and the ledger sent: an item with nothing to
     // act on is the fixtures' and goes. The log likewise holds only what the ledger wrote (H2.5).
     for g in &mut app.fixtures.approve.groups {
-        g.items
-            .retain(|i| i.date.is_some() || i.changeset.is_some() || i.mail.is_some() || i.fact.is_some());
+        g.items.retain(|i| {
+            i.date.is_some() || i.changeset.is_some() || i.mail.is_some() || i.fact.is_some() || i.goal.is_some()
+        });
     }
     app.fixtures.approve.groups.retain(|g| !g.items.is_empty());
     app.fixtures.autolog.entries.retain(|e| e.fact.is_some());
@@ -334,6 +335,7 @@ fn apply_live(app: &mut App, msg: Live) {
         // Live, the sample goals go even before the first answer (C3: no sample data in a live
         // window); a failed fetch keeps the last good one and says so on the screen.
         Live::Learning(Ok(l)) => {
+            locus_tui::live::apply_learning_approve(&mut app.fixtures, &l);
             app.fixtures.learning = l;
             app.learning_error = None;
         }
@@ -508,7 +510,7 @@ fn run(mut app: App) -> Result<()> {
                 app.note = Some(n);
             }
             while let Ok(msg) = live_rx.try_recv() {
-                refreshed |= matches!(msg, Live::Facts(_));
+                refreshed |= matches!(msg, Live::Facts(_) | Live::Learning(Ok(_)));
                 apply_live(&mut app, msg);
             }
             if let Ok((mut proposals, previews, need)) = mail_rx.try_recv() {

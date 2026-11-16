@@ -229,6 +229,10 @@ pub struct UpdateTaskReq {
     /// `""` clears the deadline.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub due: Option<String>,
+    /// Plan no work before this (a date or time); `""` clears. A learning goal's pace re-spreads
+    /// its topics' windows with it (spec L3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub earliest_start: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub priority: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

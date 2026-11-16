@@ -306,6 +306,7 @@ pub fn apply_dates(fx: &mut Fixtures, bookings: &[crate::maildates::Booking], ca
             changeset: None,
             mail: None,
             fact: None,
+            goal: None,
         });
     }
     fx.approve
@@ -340,6 +341,7 @@ pub fn apply_pending(fx: &mut Fixtures, pending: &[kairos_core::changeset::Chang
             changeset: Some(c.id.clone()),
             mail: None,
             fact: None,
+            goal: None,
             detail: Some(locus_contract::ApproveDetail {
                 action: "CALENDAR".into(),
                 who: format!("kairos · {}", c.author.as_str()),

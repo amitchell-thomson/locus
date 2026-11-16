@@ -295,6 +295,20 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     );
 }
 
+/// Agree (`learn approve`: topics current, a kairos task per topic at the pace) or refuse
+/// (`learn reject`: the current curriculum stays) a goal's proposed curriculum, on the server.
+pub fn decide(goal: &str, yes: bool) -> Result<String, String> {
+    let verb = if yes { "approve" } else { "reject" };
+    let said = crate::live::server_locus(&["learn".into(), verb.into(), goal.into()])?;
+    let first = said.lines().next().unwrap_or("done").to_string();
+    let last = said.lines().last().unwrap_or("").to_string();
+    Ok(if yes && last != first {
+        format!("{first} {last}")
+    } else {
+        first
+    })
+}
+
 pub fn key(app: &mut App, k: KeyEvent) -> bool {
     let l = app.fixtures.learning.clone();
     if let Some(d) = nav(&k) {
@@ -311,10 +325,28 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
     let goal = l.goals.get(app.sel('g')).cloned();
     // Live (spec L), nothing is pretended: agreeing and changing go through the server's steps.
     if app.home_live {
+        if k.code == KeyCode::Char('y') {
+            app.note = Some(match goal {
+                Some(g) if g.state == GoalState::Proposed => match decide(&g.id, true) {
+                    Ok(m) => {
+                        if let Some(x) = app.fixtures.learning.goals.iter_mut().find(|x| x.id == g.id) {
+                            x.state = GoalState::Active;
+                        }
+                        app.fixtures
+                            .approve
+                            .groups
+                            .iter_mut()
+                            .for_each(|grp| grp.items.retain(|it| it.goal.as_deref() != Some(&g.id)));
+                        app.fixtures.approve.groups.retain(|grp| !grp.items.is_empty());
+                        m
+                    }
+                    Err(e) => format!("heuris said no: {e}"),
+                },
+                _ => "only a proposed curriculum needs agreeing".into(),
+            });
+            return true;
+        }
         let msg = match k.code {
-            KeyCode::Char('y') => {
-                "agreeing a curriculum comes with step L3: it will make kairos tasks at the goal's pace"
-            }
             KeyCode::Char('e') => {
                 "to change it, tell any Claude what to change; it re-proposes (`locus learn note`, then `propose`)"
             }

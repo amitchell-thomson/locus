@@ -328,7 +328,10 @@ def _heuris_syllabus(conn, args) -> None:
 
 def cmd_learn(args) -> None:
     """The learning system (spec L): goals and their pace. `list`, `show <goal>`, `add <id>
-    <title>`, `pace <goal> <hours>` (with --since/--until for a ramp), `state <goal> <state>`."""
+    <title>`, `pace <goal> <hours>` (with --since/--until for a ramp; re-spreads an approved
+    goal's tasks), `state <goal> <state>`, `area <goal> <area>`, `propose`, `curriculum`,
+    `plan <goal>` (the windows approving would give), `approve <goal>` (L3: topics current, a
+    kairos task per topic at the pace), `reject <goal>`."""
     import json as _json
     from contextlib import closing
     from dataclasses import asdict
@@ -336,6 +339,11 @@ def cmd_learn(args) -> None:
     from locus.heuris import curriculum as C
     from locus.heuris import db as hdb
     from locus.heuris import learning as L
+    from locus.heuris import learning_plan as LP
+
+    def _kairos(*a, **k):
+        from locus.kairos_http import call
+        return call(*a, **k)
 
     with closing(hdb.connect()) as conn:
         try:
@@ -366,18 +374,41 @@ def cmd_learn(args) -> None:
                           + (f"  ({note})" if note else "") + f"  [set {at[:16]}]")
             elif a == "add":
                 g = L.add_goal(conn, args.goal, args.title or args.goal, master_by=args.by,
-                               priority=args.priority, thing=args.thing, notes=args.note)
+                               priority=args.priority, thing=args.thing, notes=args.note, area=args.area)
                 print(f"Added: {L.describe(g)}")
             elif a == "pace":
                 g = L.set_pace(conn, args.goal, float(args.value), since=args.since, until=args.until, note=args.note)
                 print(f"Pace: {L.describe(g)}")
+                if LP.tasks_of(conn, g.id):
+                    n, summary = LP.respread(conn, g.id, kairos=_kairos)
+                    print(f"Re-spread {n} open task(s). {summary}")
+                print(C.pace_line(g, C.leaf_hours(conn, g.id, state="current" if g.state == "active" else "proposed")))
             elif a == "state":
                 print(f"Now: {L.describe(L.set_state(conn, args.goal, args.value))}")
+            elif a == "area":
+                print(f"Now: {L.describe(L.set_area(conn, args.goal, args.value or ''))}")
+            elif a == "plan":
+                for w in LP.plan_preview(conn, args.goal):
+                    print(f"{w.start} to {w.due}  {w.hours:4g} h  {w.title}")
+            elif a == "approve":
+                r = LP.approve(conn, args.goal, kairos=_kairos)
+                print(f"Approved {r.goal.id}: {len(r.created)} task(s) made"
+                      + (f", {r.kept} already had one" if r.kept else "") + ".")
+                for w, tid in r.created:
+                    print(f"  {w.start} to {w.due}  {w.hours:4g} h  {w.title}  [{tid}]")
+                print(r.plan)
+            elif a == "reject":
+                print(f"Rejected: {LP.reject(conn, args.goal)} proposed topics of {args.goal}; the current curriculum stays.")
             elif a == "note":
                 g = L.set_notes(conn, args.goal, args.value or "")
                 print(f"Notes for {g.id}: {g.notes}")
         except L.LearningError as e:
             raise SystemExit(str(e))
+        except OSError as e:
+            # kairosd refused or is unreachable: what was made so far is recorded, and approving
+            # again makes only the rest.
+            detail = e.read().decode(errors="replace")[:300] if hasattr(e, "read") else ""
+            raise SystemExit(f"kairos said no: {e} {detail}".strip())
 
 
 def cmd_restore_ledger(args) -> None:
@@ -1664,7 +1695,8 @@ def main(argv=None) -> None:
     phe.set_defaults(func=cmd_heuris)
 
     ple = sub.add_parser("learn", help="spec L: learning goals and their pace (hours a week)")
-    ple.add_argument("action", choices=["list", "show", "add", "pace", "state", "note", "propose", "curriculum", "export"])
+    ple.add_argument("action", choices=["list", "show", "add", "pace", "state", "note", "propose", "curriculum", "export",
+                                         "area", "plan", "approve", "reject"])
     ple.add_argument("--evidence", nargs="*", help="propose: pointers it must use (src:623, fact:196)")
     ple.add_argument("--query", action="append", help="propose: what to search for, instead of the default")
     ple.add_argument("goal", nargs="?", help="a goal id: interview-prep, cpp-oxdaq, quast")
@@ -1673,6 +1705,7 @@ def main(argv=None) -> None:
     ple.add_argument("--by", help="add: master-by date YYYY-MM-DD")
     ple.add_argument("--priority", type=int, default=2, help="add: 1 highest")
     ple.add_argument("--thing", help="add: the registry id it serves")
+    ple.add_argument("--area", choices=["Studies", "Projects", "Careers"], help="add: its kairos tasks' key")
     ple.add_argument("--since", help="pace: from YYYY-MM-DD (default today)")
     ple.add_argument("--until", help="pace: until YYYY-MM-DD inclusive (a ramp that ends by itself)")
     ple.add_argument("--note", help="a note kept with it")

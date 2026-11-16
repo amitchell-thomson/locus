@@ -240,6 +240,7 @@ fn a_decided_fact_comes_back_with_u_whether_it_was_yes_or_no() {
         changeset: None,
         mail: None,
         fact: Some(id),
+        goal: None,
         detail: None,
     };
     a.fixtures.approve.groups = vec![ApproveGroup {
@@ -281,6 +282,7 @@ fn plain(text: &str, fact: Option<u64>, changeset: Option<&str>) -> locus_contra
         changeset: changeset.map(str::to_string),
         mail: None,
         fact,
+        goal: None,
         detail: None,
     }
 }
@@ -350,7 +352,7 @@ fn bulk_actions_skip_facts_and_say_what_failed() {
     // test's call to the real server.
     let note = a.note.clone().unwrap_or_default();
     assert!(
-        note.contains("1 fact(s) skipped") && note.contains("still waiting"),
+        note.contains("1 fact(s) or curricula skipped") && note.contains("still waiting"),
         "{note}"
     );
     assert!(

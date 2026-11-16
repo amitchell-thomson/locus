@@ -37,6 +37,7 @@ fn group_name(k: ApproveKind) -> &'static str {
         ApproveKind::MailSend => "mail to send",
         ApproveKind::MailFiling => "mail to file",
         ApproveKind::Fact => "facts from mail",
+        ApproveKind::Curriculum => "curricula to agree",
     }
 }
 
@@ -51,6 +52,7 @@ fn badge_text(kind: ApproveKind, it: &ApproveItem) -> String {
         ApproveKind::MailSend => "SEND",
         ApproveKind::MailFiling => "MAIL",
         ApproveKind::Fact => "FACT",
+        ApproveKind::Curriculum => "LEARN",
     }
     .into()
 }
@@ -656,7 +658,8 @@ fn bulk(app: &mut App, idxs: Vec<usize>, k: KeyEvent, verb: &str) {
     let (mut tried, mut facts, mut first_err) = (0, 0, None);
     for idx in idxs.into_iter().rev() {
         let Some((g, i)) = selected(app, idx) else { continue };
-        if app.fixtures.approve.groups[g].items[i].fact.is_some() {
+        let it = &app.fixtures.approve.groups[g].items[i];
+        if it.fact.is_some() || it.goal.is_some() {
             facts += 1;
             continue;
         }
@@ -683,7 +686,7 @@ fn bulk(app: &mut App, idxs: Vec<usize>, k: KeyEvent, verb: &str) {
         }
     }
     if facts > 0 {
-        note += &format!("; {facts} fact(s) skipped: y or n on each");
+        note += &format!("; {facts} fact(s) or curricula skipped: y or n on each");
     }
     app.note = Some(note);
 }
@@ -1145,6 +1148,36 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 decide_fact(app, (g, i), id, c == 'y', None);
                 return true;
             }
+            // A learning goal's proposed curriculum (spec L3): agreed or refused on the server.
+            let goal = key
+                .strip_prefix("approve:")
+                .and_then(|r| r.split_once(':'))
+                .and_then(|(g, i)| {
+                    let g: usize = g.parse().ok()?;
+                    let i: usize = i.parse().ok()?;
+                    app.fixtures
+                        .approve
+                        .groups
+                        .get(g)?
+                        .items
+                        .get(i)?
+                        .goal
+                        .clone()
+                        .map(|id| (g, i, id))
+                });
+            if let (Some((g, i, id)), KeyCode::Char(c @ ('y' | 'n'))) = (goal, k.code)
+                && app.home_live
+            {
+                match crate::ui::learning::decide(&id, c == 'y') {
+                    Ok(msg) => {
+                        app.fixtures.approve.groups[g].items.remove(i);
+                        app.fixtures.approve.groups.retain(|x| !x.items.is_empty());
+                        app.note = Some(msg);
+                    }
+                    Err(e) => app.note = Some(format!("heuris said no: {e}")),
+                }
+                return true;
+            }
 
             // A calendar change from kairos (round 7c): approved or refused here, the one place.
             let changeset = key
@@ -1222,9 +1255,9 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                         .parse::<usize>()
                         .ok()
                         .and_then(|g| app.fixtures.approve.groups.get(g))
-                        && g.items.iter().any(|i| i.fact.is_some())
+                        && g.items.iter().any(|i| i.fact.is_some() || i.goal.is_some())
                     {
-                        app.note = Some("facts are approved one at a time: y or n on each".into());
+                        app.note = Some("facts and curricula are agreed one at a time: y or n on each".into());
                         return true;
                     }
                     // A mail group (X2) is decided in keryx, every item in it.
@@ -1347,6 +1380,9 @@ fn item_key(it: &ApproveItem) -> String {
     if let Some(f) = it.fact {
         return format!("fact:{f}");
     }
+    if let Some(g) = &it.goal {
+        return format!("goal:{g}");
+    }
     if let Some(cs) = &it.changeset {
         return format!("cs:{cs}");
     }
@@ -1397,8 +1433,9 @@ pub fn settle(app: &mut App, before: Anchor) {
         locus_contract::ApproveKind::Calendar => 0,
         locus_contract::ApproveKind::Date => 1,
         locus_contract::ApproveKind::Fact => 2,
-        locus_contract::ApproveKind::MailSend => 3,
-        locus_contract::ApproveKind::MailFiling => 4,
+        locus_contract::ApproveKind::Curriculum => 3,
+        locus_contract::ApproveKind::MailSend => 4,
+        locus_contract::ApproveKind::MailFiling => 5,
     });
     if app.home_live {
         app.marks

@@ -39,6 +39,9 @@ pub enum ApproveKind {
     /// A fact from mail waiting for your yes (heuris H2, D2): a conflict with what you said, or
     /// not from a sender of authority.
     Fact,
+    /// A learning goal's proposed curriculum (spec L3): yes makes it current and gives each topic
+    /// a kairos task at the goal's pace; no keeps the current one.
+    Curriculum,
 }
 
 /// What deciding a mail item acts on in keryx.
@@ -97,6 +100,9 @@ pub struct ApproveItem {
     /// For a proposed fact: its id in heuris's ledger, approved or rejected there.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fact: Option<u64>,
+    /// For a proposed curriculum: the learning goal's id (`interview-prep`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub goal: Option<String>,
     /// What the detail pane shows for it (10 Nov: "easier to review the individual actions").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<ApproveDetail>,

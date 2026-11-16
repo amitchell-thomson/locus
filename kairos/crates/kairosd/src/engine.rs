@@ -2240,6 +2240,16 @@ impl Engine {
             };
             due_changed = t.due != before.due;
         }
+        if let Some(es) = &req.earliest_start {
+            t.earliest_start = if es.trim().is_empty() {
+                None
+            } else {
+                Some(match api::parse_time(es, tz, now)? {
+                    TimeIn::At(x) => x,
+                    TimeIn::Date(d) => kairos_core::time::resolve_local(d.and_time(NaiveTime::MIN), tz),
+                })
+            };
+        }
         if let Some(p) = req.priority {
             t.priority = p.clamp(1, 3);
         }

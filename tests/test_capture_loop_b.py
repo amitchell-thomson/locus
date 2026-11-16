@@ -330,3 +330,15 @@ def test_a_quarantined_source_is_not_downloaded_every_run(tmp_path):
     r = _run(conn, [src], fetch_fn=lambda d: fetches.append(d) or Path("/x"),
              held_fn=lambda doc: True)
     assert fetches == [] and [o.status for o in r.outcomes] == ["quarantined"]
+
+
+def test_ink_left_untranscribed_by_the_cap_is_read_on_the_next_run(tmp_path):
+    # 16 Nov: a document was recorded as done when the per-run cap stopped transcription, so 574
+    # inked marks were never read until he wrote on the page again.
+    conn = _conn(tmp_path)
+    _library_row(conn)
+    manifest: dict = {}
+    _run(conn, [_reading()], manifest=manifest, limit=1)   # the fake transcribes 1, writes no note
+    assert "annotate:uuid-1" not in manifest
+    r2 = _run(conn, [_reading()], manifest=manifest, limit=1)
+    assert [o.status for o in r2.outcomes] == ["annotated"]

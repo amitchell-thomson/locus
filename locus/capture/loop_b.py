@@ -136,6 +136,15 @@ def _corpus_uri_for(conn: sqlite3.Connection, pdf_bytes: bytes) -> str | None:
     return row["source_uri"] if row else None
 
 
+def _untranscribed(conn, uri: str) -> bool:
+    """Whether a mark on `uri` with real ink still has no transcription."""
+    try:
+        return conn.execute("SELECT 1 FROM pdf_annotations WHERE source_uri=? AND note IS NULL "
+                            "AND stroke_count >= 6 LIMIT 1", (uri,)).fetchone() is not None
+    except Exception:  # noqa: BLE001 (an older schema: say nothing is left)
+        return False
+
+
 def _chosen(device_path: str) -> bool:
     """Has the owner moved this document into a folder that says "I am reading this"?"""
     parts = [p for p in device_path.strip("/").split("/") if p]
@@ -356,6 +365,7 @@ def annotate_sync(
                     conn, marks, source_uri=uri, doc_uuid=doc_read.doc_uuid, source_run=run.id,
                 )
                 transcribed = 0
+                gave = budget if cfg.capture.annotate_transcribe else 0
                 if budget > 0 and cfg.capture.annotate_transcribe:
                     transcribed = transcribe_fn(conn, marks, source_uri=uri, limit=budget)
                     budget -= transcribed
@@ -371,7 +381,12 @@ def annotate_sync(
                     where.role == "reading" and uri == device_path and _chosen(device_path)
                     and bool(doc_read.pdf_bytes)
                 )
-                if not chosen_but_missing:
+                # Ink left untranscribed because this run's budget ran out: not done either. It
+                # was recorded as done, and 574 inked marks were never read again until he wrote
+                # on the page (16 Nov).
+                cut_short = (cfg.capture.annotate_transcribe and bool(marks)
+                             and gave > 0 and transcribed >= gave and _untranscribed(conn, uri))
+                if not chosen_but_missing and not cut_short:
                     # A book he chose whose ingest did not land (the lock was held, or the ingest
                     # passes failed: the API credit ran out on 27 Oct) is NOT recorded as done,
                     # or it would never be tried again until he wrote on it.

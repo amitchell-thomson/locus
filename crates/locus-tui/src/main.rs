@@ -461,6 +461,10 @@ fn run(mut app: App) -> Result<()> {
             if rebuilt.ready()
                 && matches!(app.mode, locus_tui::app::Mode::Normal)
                 && app.chat.busy.is_none()
+                // Nor with a picker, a filter being typed or a visual selection open (16 Nov).
+                && app.approve_pick.is_none()
+                && !app.approve_filtering
+                && app.approve_visual.is_none()
                 && app.last_key.is_none_or(|t| t.elapsed() > locus_theme::rebuilt::IDLE)
             {
                 reexec = true;
@@ -473,6 +477,10 @@ fn run(mut app: App) -> Result<()> {
             if let Some(n) = app.chat.fact_note.take() {
                 app.note = Some(n);
             }
+            // Refreshes rebuild the approve list; the cursor and an open picker follow their
+            // items, not their positions (16 Nov).
+            let anchor = locus_tui::ui::approve::anchor(&app);
+            let mut refreshed = false;
             if let Ok((cal, chores, tasks, bookings, pending)) = cal_rx.try_recv()
                 && let Some(live) = app.calendar.clone()
             {
@@ -482,11 +490,13 @@ fn run(mut app: App) -> Result<()> {
                 locus_tui::calendar::apply(&mut app.fixtures, &cal, |k| live.area_of(k), chrono::Utc::now());
                 locus_tui::calendar::apply_chores(&mut app.fixtures, &chores);
                 locus_tui::calendar::apply_tasks(&mut app.fixtures, &tasks);
+                refreshed = true;
             }
             if let Some(n) = app.mail_queue.as_ref().and_then(|q| q.take_note()) {
                 app.note = Some(n);
             }
             while let Ok(msg) = live_rx.try_recv() {
+                refreshed |= matches!(msg, Live::Facts(_));
                 apply_live(&mut app, msg);
             }
             if let Ok((mut proposals, previews, need)) = mail_rx.try_recv() {
@@ -498,6 +508,10 @@ fn run(mut app: App) -> Result<()> {
                 if let Some(n) = need {
                     locus_tui::mail::apply_counts(&mut app.fixtures, n);
                 }
+                refreshed = true;
+            }
+            if refreshed {
+                locus_tui::ui::approve::settle(&mut app, anchor);
             }
             if let Some(req) = inbox.poll() {
                 app.home();

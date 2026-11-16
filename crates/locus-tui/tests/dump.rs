@@ -264,8 +264,107 @@ fn a_decided_fact_comes_back_with_u_whether_it_was_yes_or_no() {
     press(&mut a, 'u');
     press(&mut a, 'u');
     assert_eq!(a.fixtures.approve.groups[0].items.len(), 2);
-    *locus_tui::live::SERVER_FAKE.lock().unwrap() = None;
+    // The stand-in stays installed: tests run in parallel, and clearing it could send another
+    // test's call to the real server.
     let asked = ASKED.lock().unwrap().clone();
     assert!(asked.contains(&"facts reopen --id 375".to_string()), "{asked:?}");
     assert!(asked.contains(&"facts reject --id 375".to_string()), "{asked:?}");
+}
+
+fn plain(text: &str, fact: Option<u64>, changeset: Option<&str>) -> locus_contract::ApproveItem {
+    locus_contract::ApproveItem {
+        text: text.into(),
+        to: None,
+        from: "test".into(),
+        new: false,
+        date: None,
+        changeset: changeset.map(str::to_string),
+        mail: None,
+        fact,
+        detail: None,
+    }
+}
+
+#[test]
+fn a_refresh_reorders_nothing_and_the_cursor_stays_on_its_item() {
+    // 16 Nov: each source put its groups first, so the list reordered every minute and the
+    // next y could decide a different item.
+    use locus_contract::{ApproveGroup, ApproveKind};
+    let mut a = app("default", ScreenId::Home);
+    a.home_live = true;
+    a.fixtures.approve.groups = vec![ApproveGroup {
+        kind: ApproveKind::Fact,
+        label: None,
+        items: vec![plain("f1", Some(1), None), plain("f2", Some(2), None)],
+    }];
+    a.open(ScreenId::Approve);
+    a.sel.insert((ScreenId::Approve, ' '), 1); // on f2
+    let before = locus_tui::ui::approve::anchor(&a);
+    // a calendar refresh puts its group in front
+    a.fixtures.approve.groups.insert(
+        0,
+        ApproveGroup {
+            kind: ApproveKind::Calendar,
+            label: None,
+            items: vec![plain("cs", None, Some("cs-1")), plain("cs2", None, Some("cs-2"))],
+        },
+    );
+    locus_tui::ui::approve::settle(&mut a, before);
+    let sel = a.sel[&(ScreenId::Approve, ' ')];
+    let flat: Vec<String> = a
+        .fixtures
+        .approve
+        .groups
+        .iter()
+        .flat_map(|g| g.items.iter().map(|i| i.text.clone()))
+        .collect();
+    assert_eq!(flat[sel], "f2", "{flat:?}");
+}
+
+#[test]
+fn bulk_actions_skip_facts_and_say_what_failed() {
+    use locus_contract::{ApproveGroup, ApproveKind};
+    *locus_tui::live::SERVER_FAKE.lock().unwrap() = Some(fake_server);
+    let mut a = app("default", ScreenId::Home);
+    a.home_live = true;
+    a.fixtures.approve.groups = vec![
+        ApproveGroup {
+            kind: ApproveKind::Fact,
+            label: None,
+            items: vec![plain("me fact one", Some(11), None)],
+        },
+        ApproveGroup {
+            kind: ApproveKind::Date,
+            label: None,
+            items: vec![plain("me date", None, None)],
+        },
+    ];
+    a.open(ScreenId::Approve);
+    let press = |a: &mut App, c: KeyCode| a.on_key(KeyEvent::new(c, KeyModifiers::NONE));
+    press(&mut a, KeyCode::Char('/'));
+    press(&mut a, KeyCode::Char('m'));
+    press(&mut a, KeyCode::Char('e'));
+    press(&mut a, KeyCode::Enter);
+    press(&mut a, KeyCode::Char('Y'));
+    // The stand-in stays installed: tests run in parallel, and clearing it could send another
+    // test's call to the real server.
+    let note = a.note.clone().unwrap_or_default();
+    assert!(
+        note.contains("1 fact(s) skipped") && note.contains("still waiting"),
+        "{note}"
+    );
+    assert!(
+        !ASKED.lock().unwrap().iter().any(|q| q.contains("--id 11")),
+        "a fact was approved in bulk"
+    );
+    // Y on a live group of dates is refused, never marked green
+    a.approve_filter.clear();
+    a.sel.insert((ScreenId::Approve, ' '), 1);
+    press(&mut a, KeyCode::Char('Y'));
+    assert!(
+        a.note.as_deref().unwrap_or("").contains("one at a time"),
+        "{:?}",
+        a.note
+    );
+    assert!(a.marks.is_empty());
 }

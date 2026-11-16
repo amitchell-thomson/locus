@@ -646,6 +646,48 @@ pub fn draw_log(f: &mut Frame, area: Rect, app: &App) {
     lines(f, inner, out);
 }
 
+/// Run `k` on every visible line in `idxs` (highest first, so removals don't shift the rest),
+/// skipping facts, which are decided one at a time. Says how many were decided and, if any were
+/// not, why the first one was not: bulk actions used to overwrite every refusal with "approved N"
+/// (16 Nov).
+fn bulk(app: &mut App, idxs: Vec<usize>, k: KeyEvent, verb: &str) {
+    let total = |app: &App| app.fixtures.approve.groups.iter().map(|g| g.items.len()).sum::<usize>();
+    let before = total(app);
+    let (mut tried, mut facts, mut first_err) = (0, 0, None);
+    for idx in idxs.into_iter().rev() {
+        let Some((g, i)) = selected(app, idx) else { continue };
+        if app.fixtures.approve.groups[g].items[i].fact.is_some() {
+            facts += 1;
+            continue;
+        }
+        tried += 1;
+        app.sel.insert((ScreenId::Approve, ' '), idx);
+        app.note = None;
+        key(app, k);
+        if let Some(n) = &app.note
+            && first_err.is_none()
+            && (n.contains("said no")
+                || n.contains("isn't connected")
+                || n.contains("only a mail")
+                || n.contains("one at a time"))
+        {
+            first_err = Some(n.clone());
+        }
+    }
+    let done = before.saturating_sub(total(app));
+    let mut note = format!("{verb} {done} of {tried}");
+    if done < tried {
+        note += &format!("; {} still waiting", tried - done);
+        if let Some(e) = first_err {
+            note += &format!(" ({e})");
+        }
+    }
+    if facts > 0 {
+        note += &format!("; {facts} fact(s) skipped: y or n on each");
+    }
+    app.note = Some(note);
+}
+
 /// A fact decided here, kept so `u` can put it back: the item as it was shown, and its group
 /// (with only that item) in case the group went when its last item did.
 #[derive(Debug, Clone)]
@@ -670,6 +712,8 @@ pub fn decide_fact(app: &mut App, (g, i): (usize, usize), id: u64, yes: bool, va
     }
     match crate::live::server_locus(&args) {
         Ok(msg) => {
+            // Found by its id: a refresh while he typed a correction can move it (16 Nov).
+            let (g, i) = find_fact(app, id).unwrap_or((g, i));
             if let Some(grp) = app.fixtures.approve.groups.get(g)
                 && let Some(it) = grp.items.get(i).filter(|it| it.fact == Some(id))
             {
@@ -689,6 +733,15 @@ pub fn decide_fact(app: &mut App, (g, i): (usize, usize), id: u64, yes: bool, va
         }
         Err(e) => app.note = Some(format!("heuris said no: {e}")),
     }
+}
+
+fn find_fact(app: &App, id: u64) -> Option<(usize, usize)> {
+    app.fixtures
+        .approve
+        .groups
+        .iter()
+        .enumerate()
+        .find_map(|(g, grp)| grp.items.iter().position(|it| it.fact == Some(id)).map(|i| (g, i)))
 }
 
 /// `u` on a fact: back to waiting in the ledger (an approval's value taken back, what it
@@ -740,9 +793,16 @@ fn undo(app: &mut App) {
             if let Some(d) = back {
                 app.fact_undo.push(d);
             }
-            // The next u reaches past this mail decision to an older fact.
-            app.mail_decided_at = None;
+            // Older mail decisions may remain: the next u still prefers mail unless a fact was
+            // decided after the newest of them. Without a time per mail entry, keep the mark.
             app.note = Some(m);
+        }
+        // keryx is still carrying out the newest decision: say so, never reach past it.
+        (Err(e), back) if e.contains("still doing") => {
+            if let Some(d) = back {
+                app.fact_undo.push(d);
+            }
+            app.note = Some(e);
         }
         (Err(_), Some(d)) => reopen_fact(app, d),
         (Err(e), None) => app.note = Some(e),
@@ -819,12 +879,13 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
             // With a filter, Y approves every line it shows (a group can be half shown).
             if k.code == KeyCode::Char('Y') && app.approve_visual.is_none() && !app.approve_filter.is_empty() {
                 let n = visible(app).len();
-                for idx in (0..n).rev() {
-                    app.sel.insert((ScreenId::Approve, ' '), idx);
-                    key(app, KeyEvent::new(KeyCode::Char('y'), k.modifiers));
-                }
+                bulk(
+                    app,
+                    (0..n).collect(),
+                    KeyEvent::new(KeyCode::Char('y'), k.modifiers),
+                    "approved",
+                );
                 app.sel.insert((ScreenId::Approve, ' '), 0);
-                app.note = Some(format!("approved all {n} shown: on their way to keryx"));
                 return true;
             }
             // The lines as shown, so a selection (filtered or not) names the right item.
@@ -859,18 +920,14 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 (KeyCode::Char(c @ ('y' | 'n' | 'a')), Some(start)) => {
                     let (lo, hi) = (start.min(app.sel(' ')), start.max(app.sel(' ')));
                     app.approve_visual = None;
-                    for idx in (lo..=hi.min(rows.len().saturating_sub(1))).rev() {
-                        app.sel.insert((ScreenId::Approve, ' '), idx);
-                        key(app, k);
-                    }
-                    let n = hi - lo + 1;
+                    let verb = match c {
+                        'y' => "approved",
+                        'n' => "refused",
+                        _ => "archiving instead:",
+                    };
+                    bulk(app, (lo..=hi.min(rows.len().saturating_sub(1))).collect(), k, verb);
                     let left = app.fixtures.approve.len();
                     app.sel.insert((ScreenId::Approve, ' '), lo.min(left.saturating_sub(1)));
-                    app.note = Some(match c {
-                        'y' => format!("approved {n}: on their way to keryx"),
-                        'n' => format!("refused {n}: left as they are"),
-                        _ => format!("archiving {n} instead: on their way to keryx"),
-                    });
                     return true;
                 }
                 (KeyCode::Char('e'), Some(start)) => {
@@ -1148,6 +1205,10 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 return true;
             }
             match k.code {
+                KeyCode::Char(_) if app.home_live && matches!(k.code, KeyCode::Char('y' | 'n')) => {
+                    // Live, nothing above decided it: never mark it green as if it were done.
+                    app.note = Some("this one isn't decided from here: nothing changed".into());
+                }
                 KeyCode::Char(c @ ('y' | 'n')) => {
                     approve_one(app, key, &text, to.as_deref(), c == 'y');
                     // Marked, not removed (fixtures): the next one comes up.
@@ -1222,6 +1283,12 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                         });
                         return true;
                     }
+                    // Anything else live (dates from mail): one at a time, with y on each. Y here
+                    // turned them green and told kairos nothing (16 Nov).
+                    if app.home_live {
+                        app.note = Some("these are added one at a time: y on each".into());
+                        return true;
+                    }
                     let mut n = 0;
                     for (k2, t2, to2) in rows.iter().filter(|r| r.0.split(':').nth(1) == Some(group.as_str())) {
                         approve_one(app, k2.clone(), t2, to2.as_deref(), true);
@@ -1272,5 +1339,92 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
             false
         }
         _ => false,
+    }
+}
+
+/// What an item is, whatever position it is at: a refresh rebuilds the list.
+fn item_key(it: &ApproveItem) -> String {
+    if let Some(f) = it.fact {
+        return format!("fact:{f}");
+    }
+    if let Some(cs) = &it.changeset {
+        return format!("cs:{cs}");
+    }
+    if let Some(m) = &it.mail {
+        return format!("mail:{m:?}");
+    }
+    if let Some(d) = &it.date {
+        return format!("date:{}:{}:{:?}", d.thread, d.for_id, d.at);
+    }
+    format!("text:{}", it.text)
+}
+
+/// Where the cursor and an open picker point, by what they point at, before a refresh.
+pub struct Anchor {
+    sel: Option<String>,
+    picker: Vec<String>,
+}
+
+pub fn anchor(app: &App) -> Anchor {
+    let key_at = |idx: usize| selected(app, idx).map(|(g, i)| item_key(&app.fixtures.approve.groups[g].items[i]));
+    Anchor {
+        sel: key_at(app.sel.get(&(ScreenId::Approve, ' ')).copied().unwrap_or(0)),
+        picker: app
+            .approve_pick
+            .as_ref()
+            .map(|p| {
+                p.at.iter()
+                    .filter_map(|&(g, i)| app.fixtures.approve.groups.get(g)?.items.get(i).map(item_key))
+                    .collect()
+            })
+            .unwrap_or_default(),
+    }
+}
+
+/// After a refresh (16 Nov): the groups in one fixed order by kind (each source put its own
+/// groups first, so the list reordered every minute and y could decide a different item);
+/// facts decided here stay hidden until the server stops listing them; the cursor and an open
+/// picker follow their items; position-keyed marks are dropped, since they no longer name the
+/// same items.
+pub fn settle(app: &mut App, before: Anchor) {
+    let decided: std::collections::HashSet<u64> = app.fact_undo.iter().map(|d| d.id).collect();
+    let groups = &mut app.fixtures.approve.groups;
+    for g in groups.iter_mut() {
+        g.items.retain(|it| it.fact.is_none_or(|f| !decided.contains(&f)));
+    }
+    groups.retain(|g| !g.items.is_empty());
+    groups.sort_by_key(|g| match g.kind {
+        locus_contract::ApproveKind::Calendar => 0,
+        locus_contract::ApproveKind::Date => 1,
+        locus_contract::ApproveKind::Fact => 2,
+        locus_contract::ApproveKind::MailSend => 3,
+        locus_contract::ApproveKind::MailFiling => 4,
+    });
+    if app.home_live {
+        app.marks
+            .retain(|k, _| !k.starts_with("approve:") && !k.starts_with("log:"));
+    }
+    let find = |app: &App, key: &str| {
+        visible(app)
+            .iter()
+            .position(|&(g, i)| item_key(&app.fixtures.approve.groups[g].items[i]) == key)
+    };
+    if let Some(k) = &before.sel
+        && let Some(idx) = find(app, k)
+    {
+        app.sel.insert((ScreenId::Approve, ' '), idx);
+    }
+    if !before.picker.is_empty() {
+        let at: Vec<(usize, usize)> = before
+            .picker
+            .iter()
+            .filter_map(|k| find(app, k).and_then(|idx| selected(app, idx)))
+            .collect();
+        if at.is_empty() {
+            app.approve_pick = None;
+            app.note = Some("the item you were filing went from the list: nothing filed".into());
+        } else if let Some(p) = app.approve_pick.as_mut() {
+            p.at = at;
+        }
     }
 }

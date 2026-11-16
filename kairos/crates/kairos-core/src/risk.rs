@@ -63,6 +63,8 @@ pub struct OpFacts {
     /// Deleting the ⚑ of a task that's already finished or dropped (not
     /// losing a deadline that still matters).
     pub finished_task_deadline: bool,
+    /// A task update that takes away an open task's due date (spec §6: high).
+    pub removes_due: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -178,7 +180,14 @@ pub fn is_live_event_op(op: &OpFacts) -> bool {
     }
     match (op.action, &op.before, &op.after) {
         (Action::Create, None, Some(a)) => one_off(a),
-        (Action::Update, Some(b), Some(a)) => one_off(b) && one_off(a) && b.start.date_naive() == a.start.date_naive(),
+        // The same day on HIS clock, start and end (16 Nov: compared in UTC, a BST move from
+        // 23:15 to 00:30 the next day passed as "the same day", and an end stretched over four
+        // days passed too).
+        (Action::Update, Some(b), Some(a)) => {
+            let day = |t: DateTime<Utc>| t.with_timezone(&chrono_tz::Europe::London).date_naive();
+            let end_day = |e: &EventFacts| day(e.end - chrono::Duration::seconds(1));
+            one_off(b) && one_off(a) && day(b.start) == day(a.start) && end_day(a) == day(a.start)
+        }
         _ => false,
     }
 }
@@ -191,11 +200,29 @@ fn high_reasons(op: &OpFacts, now: DateTime<Utc>, finishing: bool) -> Vec<String
     let imgs: Vec<&EventFacts> = [&op.before, &op.after].into_iter().flatten().collect();
     match op.action {
         Action::TaskDrop => r.push("dropping a task".into()),
-        Action::TaskCreate | Action::TaskUpdate | Action::TaskComplete => {}
+        Action::TaskCreate | Action::TaskUpdate | Action::TaskComplete => {
+            // Since K5 a due date is the task's own, so clearing it wrote only a task update,
+            // which had no high reasons: Claude could remove one with no approval (16 Nov).
+            if op.removes_due {
+                r.push("removes a due date".into());
+            }
+        }
         Action::ShareToFamily => r.push("share to Family always needs approval".into()),
         Action::Update | Action::Delete | Action::Move => {
             if op.before.as_ref().is_some_and(|b| b.created_by.is_none()) {
                 r.push("changes an event not created by kairos".into());
+            }
+            // An event he made himself through kairos (TUI, CLI, Shortcut) is his too (SPEC §4:
+            // "moving an event you made yourself to another day, or deleting it"); only phone-made
+            // ones were guarded, so Claude could delete or move his own kairos-made events with
+            // no approval (16 Nov).
+            if let Some(b) = op.before.as_ref().filter(|b| b.created_by == Some(Author::Alec)) {
+                let day = |t: DateTime<Utc>| t.with_timezone(&chrono_tz::Europe::London).date_naive();
+                if op.action == Action::Delete {
+                    r.push("deletes an event you made".into());
+                } else if op.after.as_ref().is_some_and(|a| day(a.start) != day(b.start)) {
+                    r.push("moves an event you made to another day".into());
+                }
             }
             if op.action == Action::Delete
                 && !finishing
@@ -340,6 +367,7 @@ mod tests {
             after,
             overlaps_fixed: overlaps,
             finished_task_deadline: false,
+            removes_due: false,
         }
     }
 
@@ -569,6 +597,31 @@ mod tests {
                 Want::Low,
             ),
             // ---- high
+            (
+                // 16 Nov: his kairos-made events are his too (SPEC §4).
+                "move an event Alec made in kairos to another day",
+                op(
+                    Update,
+                    personal(),
+                    None,
+                    ev(Event, ALEC_K, false, false, 24),
+                    ev(Event, ALEC_K, false, false, 48),
+                    false,
+                ),
+                Want::High("another day"),
+            ),
+            (
+                "delete an event Alec made in kairos",
+                op(
+                    Delete,
+                    personal(),
+                    None,
+                    ev(Event, ALEC_K, false, false, 24),
+                    None,
+                    false,
+                ),
+                Want::High("deletes an event you made"),
+            ),
             (
                 "move Alec's phone event to another day",
                 op(

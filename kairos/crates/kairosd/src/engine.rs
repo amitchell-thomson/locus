@@ -260,6 +260,23 @@ impl Engine {
 
     // ------------------------------------------------------------ world
 
+    /// How far ahead the planner must see: its horizon plus 60 days, and never short of the
+    /// latest open task's due date plus a week. The grid runs to the latest due date, so days
+    /// past the loaded world looked free and blocks were placed over real events there
+    /// (16 Nov: a task due 25 Jan got a block on top of a placement on 25 Dec).
+    fn plan_days(&self) -> Result<i64> {
+        let now = self.now();
+        let tz = self.tz();
+        let latest = self
+            .db
+            .tasks(Some(TaskStatus::Open))?
+            .iter()
+            .filter_map(|t| t.due.as_ref().map(|d| d.instant(tz)))
+            .max();
+        let base = i64::from(self.constraints.horizon_days) + 60;
+        Ok(latest.map_or(base, |l| base.max((l - now).num_days() + 7)))
+    }
+
     pub fn world(&self, horizon_days: i64) -> Result<World> {
         let sidecar = self.db.meta_all()?;
         let loaded = load::load_all(&self.cfg, &sidecar)?;
@@ -533,6 +550,7 @@ impl Engine {
                     before: None,
                     after: after_f,
                     finished_task_deadline: false,
+                    removes_due: false,
                 }
             }
             Op::UpdateEvent {
@@ -550,6 +568,7 @@ impl Engine {
                     before: self.facts_from_text(before, &item.source)?,
                     after: after_f,
                     finished_task_deadline: false,
+                    removes_due: false,
                 }
             }
             Op::DeleteEvent { item, before, .. } => OpFacts {
@@ -558,6 +577,7 @@ impl Engine {
                 origin: None,
                 overlaps_fixed: false,
                 finished_task_deadline: self.finished_task_deadline(before, &item.source)?,
+                removes_due: false,
                 before: self.facts_from_text(before, &item.source)?,
                 after: None,
             },
@@ -580,6 +600,7 @@ impl Engine {
                 before: self.facts_from_text(before, &from.source)?,
                 after: self.facts_from_text(after, &from.source)?,
                 finished_task_deadline: false,
+                removes_due: false,
             },
             Op::CreateTask { .. } => OpFacts {
                 action: Action::TaskCreate,
@@ -589,6 +610,7 @@ impl Engine {
                 after: None,
                 overlaps_fixed: false,
                 finished_task_deadline: false,
+                removes_due: false,
             },
             Op::Checkin { .. } => OpFacts {
                 action: Action::TaskUpdate,
@@ -598,6 +620,7 @@ impl Engine {
                 after: None,
                 overlaps_fixed: false,
                 finished_task_deadline: false,
+                removes_due: false,
             },
             Op::UpdateTask { before, after } => OpFacts {
                 action: match (before.status, after.status) {
@@ -611,6 +634,7 @@ impl Engine {
                 after: None,
                 overlaps_fixed: false,
                 finished_task_deadline: false,
+                removes_due: before.due.is_some() && after.due.is_none() && after.status == TaskStatus::Open,
             },
         })
     }
@@ -932,6 +956,25 @@ impl Engine {
                 Op::MoveEvent { from, to, after, .. } => {
                     expect(to, Some(after))?;
                     expect(from, None)?;
+                }
+                // A task changed since (time logged, a check-in) is not put back over that: the
+                // stale before-image silently undid the later work and double counted its time
+                // (16 Nov).
+                Op::UpdateTask { after, .. } => {
+                    let same = |t: &Task| {
+                        let mut t = t.clone();
+                        t.updated_at = after.updated_at;
+                        t == **after
+                    };
+                    if !self.db.task_get(&after.id)?.as_ref().is_some_and(same) {
+                        return Err(EngineError::Conflict {
+                            message: format!(
+                                "can't undo {id}: the task \"{}\" changed since (time logged or checked in)",
+                                after.title
+                            ),
+                            diff: String::new(),
+                        });
+                    }
                 }
                 _ => {}
             }
@@ -3301,7 +3344,7 @@ impl Engine {
         t.status = TaskStatus::Done;
         t.remaining_min = 0;
         t.updated_at = self.now();
-        let world = self.world(i64::from(self.constraints.horizon_days) + 60)?;
+        let world = self.world(self.plan_days()?)?;
         // Blocks not started yet (pinned too) are no longer needed.
         let now = self.now();
         let mut ops = vec![Op::UpdateTask {
@@ -3349,7 +3392,7 @@ impl Engine {
         let mut t = before.clone();
         t.status = TaskStatus::Dropped;
         t.updated_at = self.now();
-        let world = self.world(i64::from(self.constraints.horizon_days) + 60)?;
+        let world = self.world(self.plan_days()?)?;
         // The task and every block still ahead of it (pinned and in-progress
         // ones too) go in one changeset: one approval, one undo.
         let now = self.now();
@@ -3828,7 +3871,7 @@ impl Engine {
                 req.outcome
             ))
         })?;
-        let world = self.world(i64::from(self.constraints.horizon_days) + 60)?;
+        let world = self.world(self.plan_days()?)?;
         let (b, inst) = self
             .blocks(&world)
             .into_iter()
@@ -3907,7 +3950,7 @@ impl Engine {
         }
         let now = self.now();
         let tz = self.tz();
-        let world = self.world(i64::from(self.constraints.horizon_days) + 60)?;
+        let world = self.world(self.plan_days()?)?;
         let mut tasks = self.db.tasks(Some(TaskStatus::Open))?;
         let blocks = self.blocks(&world);
         // Past blocks not yet checked in are presumed done (they count toward the task).

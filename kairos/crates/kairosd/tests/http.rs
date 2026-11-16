@@ -483,3 +483,35 @@ async fn serves_the_locus_taxonomy() {
             .any(|p| p["id"] == "tanker-flow")
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn claude_cannot_undo_alecs_own_changes() {
+    // 16 Nov: undo restores before-images with no risk check, so Claude could reverse anything
+    // Alec did (a delete, a create, an approved share to Family) with no approval.
+    let env = Env::new(true);
+    let mine = env
+        .engine()
+        .create_task(
+            kairos_core::model::Author::Alec,
+            &kairos_core::api::CreateTaskReq {
+                title: "Essay".into(),
+                key: "Personal".into(),
+                estimate_min: 60,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let id = mine.changesets[0].changeset_id.clone();
+    let (base, _h, _) = start(&env).await;
+    let c = client();
+    initialize(&c, &base).await;
+    let r = rpc(
+        &c,
+        &base,
+        2,
+        "tools/call",
+        json!({"name": "undo", "arguments": {"id": id}}),
+    )
+    .await;
+    assert_eq!(r["result"]["isError"], true, "{r}");
+}

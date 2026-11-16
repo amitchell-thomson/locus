@@ -985,10 +985,26 @@ impl KairosMcp {
     }
 
     #[tool(
-        description = "Undo an applied changeset (restores pre-images). Refuses with a diff if the event was edited elsewhere since."
+        description = "Undo an applied changeset that Claude or the scheduler made (restores pre-images). Refuses with a diff if the event was edited elsewhere since. Alec's own changes are his to undo, in the calendar."
     )]
     async fn undo(&self, Parameters(a): Parameters<IdArgs>) -> Result<CallToolResult, ErrorData> {
-        self.run(move |e| e.undo(&a.id).map(|c| WriteResult::from(&c))).await
+        self.run(move |e| {
+            // Undo writes before-images straight back, with no risk check: on Alec's own
+            // changesets (a direct delete, a create, an approved share to Family) that let Claude
+            // reverse anything he did with no approval (16 Nov). Claude undoes only its own and
+            // the scheduler's.
+            let cs =
+                e.db.cs_get(&a.id)?
+                    .ok_or_else(|| EngineError::NotFound(format!("changeset {}", a.id)))?;
+            if !matches!(cs.author, Author::Claude | Author::Scheduler) {
+                return Err(EngineError::BadRequest(format!(
+                    "{} is Alec's own change: he undoes it in the calendar (u), not Claude",
+                    a.id
+                )));
+            }
+            e.undo(&a.id).map(|c| WriteResult::from(&c))
+        })
+        .await
     }
 }
 

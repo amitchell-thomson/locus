@@ -3052,3 +3052,27 @@ fn a_series_change_says_every_occurrence_and_a_one_off_does_not() {
     let cs = e.delete_events(Author::Claude, &[(None, single)], None).unwrap();
     assert!(!cs.summary.contains("every occurrence"), "{}", cs.summary);
 }
+
+#[test]
+fn claude_removing_a_due_date_waits_for_alec() {
+    // 16 Nov: since K5 a due date is the task's own, and clearing it was low risk.
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Claude, &b4(60, "fri 17:00")).unwrap();
+    let cleared = e
+        .update_task(
+            Author::Claude,
+            &r.task.id,
+            &kairos_core::api::UpdateTaskReq {
+                due: Some(String::new()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let cs = &cleared.changesets[0];
+    assert_eq!(cs.status, Status::Pending, "{cs:?}");
+    assert!(
+        e.find_task(&r.task.id).unwrap().due.is_some(),
+        "still due until he approves"
+    );
+}

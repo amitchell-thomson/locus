@@ -199,6 +199,9 @@ different learning locations, that learning folder in files can itself be a repo
 tablet** (your amendments, 16 Nov: "a directory under files that is also on the remarkable and
 does all of the regular syncing, so that I can see the documents in both", and no second
 location for code).
+- **Goal ids are readable** (your words, 16 Nov: "goal id's should be readable"): lowercase words
+  joined by hyphens, the same rule as registry folders, and a goal's folder is its id. The three:
+  `interview-prep` (G1), `cpp-oxdaq` (G2), `quast` (G3).
 - **Layout.** One subfolder per goal, `~/files/Learning/<goal>/`, each with `sheets/`,
   `explainers/` and `marked/` (PDFs) and `code/` (an exercise per folder: a stub, its tests, your
   solution). Top level rather than under an area, because goals cross areas (interview prep is
@@ -217,6 +220,11 @@ location for code).
 - **Indexing reads it where it is.** `repos_push` reads registry repos only under
   `~/local-projects`; a registry entry gains an optional `path`, and `learning` sets it to
   `~/files/Learning`.
+- **Practice and product stay apart** (your case, 16 Nov: C++ exercises in `Learning/cpp-oxdaq/code/`
+  and real code in OXDAQ). Exercises are small and may be thrown away; the OXDAQ part a round
+  builds lives in OXDAQ. OXDAQ never imports from `Learning/`: an exercise that grows into something
+  OXDAQ needs is rewritten there by hand (itself practice). Build output (`build/`, binaries) is
+  ignored by git and skipped by the sync, so compiled code never reaches the server or the tablet.
 - **Your rule of 14 Nov holds** (P-D0): only clean PDFs cross. Your answers in ink stay on the
   tablet and are read back into locus; `~/files` keeps the clean sheet. A marked sheet is a new
   clean PDF locus writes (your answer transcribed, the mark and the reason beside it), in

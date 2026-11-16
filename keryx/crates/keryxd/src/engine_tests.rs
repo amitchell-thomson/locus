@@ -1632,3 +1632,86 @@ fn a_retired_key_files_as_its_place_in_the_taxonomy() {
     );
     assert!(!in_inbox(&e, &lab));
 }
+
+// ---------------- 16 Nov bug hunt: regression tests ----------------
+
+#[test]
+fn a_flagged_thread_is_never_filed_on_arrival() {
+    let (mut e, _fake) = engine();
+    with_taxonomy(&mut e);
+    e.db.set_meta("autofile.since", &(NOW - 7 * 86_400).to_string())
+        .unwrap();
+    e.db.set_meta("autofile.live", "1").unwrap();
+    let ticket = r(&e, "Your e-ticket: Oxford to London, Fri 23 Oct");
+    let (a, t) = parse_thread_ref(&ticket).unwrap();
+    e.db.conn()
+        .execute(
+            "UPDATE messages SET flagged = 1 WHERE account=?1 AND thread_id=?2",
+            rusqlite::params![a, t],
+        )
+        .unwrap();
+    e.file_arrivals().unwrap();
+    assert!(in_inbox(&e, &ticket), "a flagged thread was filed away");
+}
+
+#[test]
+fn a_future_dated_mail_does_not_stop_filing_on_arrival() {
+    // 16 Nov: the mark followed the sender's Date header, so one mail dated 2036 put it there
+    // and nothing that arrived afterwards was ever filed.
+    let (mut e, _fake) = engine();
+    with_taxonomy(&mut e);
+    e.db.set_meta("autofile.live", "1").unwrap();
+    e.db.set_meta("autofile.since", &(NOW - 7 * 86_400).to_string())
+        .unwrap();
+    let fut = add(&e, "personal", 900, "someone@example.com", false);
+    let (fa, ft) = parse_thread_ref(&fut).unwrap();
+    e.db.conn()
+        .execute(
+            "UPDATE messages SET date = ?3 WHERE account=?1 AND thread_id=?2",
+            rusqlite::params![fa, ft, NOW + 10 * 365 * 86_400],
+        )
+        .unwrap();
+    e.file_arrivals().unwrap();
+    let mark: i64 = e.db.meta("autofile.since").unwrap().unwrap().parse().unwrap();
+    assert!(mark <= NOW, "the mark went past now: {mark}");
+}
+
+#[test]
+fn claude_cannot_undo_alecs_own_changes() {
+    let (mut e, _) = engine();
+    let lab = r(&e, "Lab partner for Thursday?");
+    e.triage(req(Intent::Archive, vec![lab.clone()]), Who::ALEC).unwrap();
+    let back = e
+        .triage(req(Intent::Unarchive, vec![lab.clone()]), Who::ALEC)
+        .unwrap()
+        .applied
+        .unwrap();
+    assert!(e.undo(&back.id, Who::CLAUDE).is_err());
+    assert!(in_inbox(&e, &lab), "Claude archived people mail through undo");
+}
+
+#[test]
+fn a_proposal_whose_thread_changed_is_not_applied() {
+    let (mut e, _) = engine();
+    let b = r(&e, "Coursework submission portal");
+    let rid = propose(&mut e, vec![(b.clone(), Action::Archive)]);
+    let pid = e.review(&rid).unwrap().items[0].proposal.id.clone();
+    let mut m = thread(&e, &b)[0].clone();
+    m.source_id = "late1".into();
+    m.message_id = "late1@x".into();
+    m.date = NOW + 60;
+    m.from = Some(Address::new(None, "tutor@example.ac.uk"));
+    m.list_headers = vec![];
+    e.db.upsert(&m, Raw::None, keryx_core::text::TEXT_VERSION).unwrap();
+    let out = e
+        .decide_many(
+            vec![DecideOne {
+                proposal: pid,
+                decision: Decision::Accept,
+            }],
+            Who::ALEC,
+        )
+        .unwrap();
+    assert!(out.done[0].error.is_some());
+    assert!(in_inbox(&e, &b), "a person's new reply was archived unseen");
+}

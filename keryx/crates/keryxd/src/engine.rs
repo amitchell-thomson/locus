@@ -956,6 +956,14 @@ impl Engine {
                 orig.status.as_str()
             )));
         }
+        // The inverse is applied at low risk with no assessment, so a caller that is not Alec
+        // undoes only what Claude or keryx itself did: Claude undoing Alec's un-archive
+        // archived a person's mail with no review (16 Nov).
+        if !who.direct() && orig.author != who.author && !matches!(orig.author, Author::Claude | Author::System) {
+            return Err(EngineError::BadRequest(format!(
+                "{id} is Alec's own change: he undoes it in keryx (u), not Claude"
+            )));
+        }
         let mut diffs = Vec::new();
         for op in &orig.ops {
             if let Op::State { msg, after, .. } = op {
@@ -1253,6 +1261,11 @@ impl Engine {
             Decision::Accept => (ProposalStatus::Accepted, p.action.clone()),
             Decision::Change(a) => (ProposalStatus::Changed, a),
         };
+        if keryx_store::state::fingerprint(&self.db.thread(&p.account, &p.thread_id)?) != p.fingerprint {
+            return Err(EngineError::BadRequest(
+                "the thread changed since this was proposed (new mail?): look again".into(),
+            ));
+        }
         let r = keryx_core::model::thread_ref(&p.account, &p.thread_id);
         let cs = self.carry_out(&[r], &action, &p.review_id, who)?;
         self.db.decide_proposal(
@@ -1313,6 +1326,17 @@ impl Engine {
                 Decision::Accept => (ProposalStatus::Accepted, p.action.clone()),
                 Decision::Change(a) => (ProposalStatus::Changed, a),
             };
+            // The thread changed after the proposal was made (a person replied): what he saw is
+            // not what would be archived, so it stays open (16 Nov; only Y skipped these).
+            let msgs = self.db.thread(&p.account, &p.thread_id)?;
+            if keryx_store::state::fingerprint(&msgs) != p.fingerprint {
+                out.done.push(DecidedOne {
+                    proposal: p.id,
+                    changeset: None,
+                    error: Some("the thread changed since this was proposed: look again".into()),
+                });
+                continue;
+            }
             let r = keryx_core::model::thread_ref(&p.account, &p.thread_id);
             let k = (p.review_id.clone(), serde_json::to_string(&action).unwrap_or_default());
             batches

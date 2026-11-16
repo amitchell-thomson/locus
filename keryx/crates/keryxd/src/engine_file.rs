@@ -52,8 +52,16 @@ impl Engine {
         let mut newest = since;
         // (folder, item) → threads, so each destination is one changeset.
         let mut groups: BTreeMap<(String, Option<String>), Vec<String>> = BTreeMap::new();
+        let now = self.now();
         for r in rows.iter().filter(|r| r.date > since) {
-            newest = newest.max(r.date);
+            // The mark never passes now: one mail dated 2036 (a sender's Date header) stopped
+            // filing on arrival for good, silently (16 Nov).
+            newest = newest.max(r.date.min(now));
+            // A thread he flagged stays where it is: the system skipped every high rule, so a
+            // new notification in a flagged thread filed the whole thread away (16 Nov).
+            if r.flagged {
+                continue;
+            }
             // Not live: only `[keryx-test]` mail could be changed, so only it is tried (the rest
             // would each leave a failed changeset in the log).
             if !self.cfg.live && !keryx_core::reply::bare_subject(&r.subject).starts_with(keryx_core::risk::TEST_PREFIX)

@@ -71,10 +71,20 @@ impl Command {
             Command::Login { user, pass } => format!("LOGIN {} {}", quote(user)?, quote(pass)?),
             Command::List => r#"LIST "" "*""#.to_string(),
             Command::Select(mailbox) => format!("SELECT {}", quote(mailbox)?),
-            Command::Search(id) => format!(
-                "UID SEARCH X-GM-RAW {}",
-                quote(&format!("rfc822msgid:{}", id.trim_matches(['<', '>'])))?
-            ),
+            Command::Search(id) => {
+                // The Message-ID is the sender's to choose, and X-GM-RAW is Gmail's search
+                // language: `<abc OR in:inbox>` searched the whole inbox, whose every message then
+                // lost its Inbox label (16 Nov). Only an id with no space and no search syntax is
+                // searched for.
+                let bare = id.trim().trim_matches(['<', '>']);
+                if bare.is_empty()
+                    || !bare.contains('@')
+                    || bare.chars().any(|c| c.is_whitespace() || "\"(){}".contains(c))
+                {
+                    return Err(ImapError::Protocol(format!("refusing an unusual Message-ID: {bare:?}")));
+                }
+                format!("UID SEARCH X-GM-RAW {}", quote(&format!("rfc822msgid:{bare}"))?)
+            }
             Command::SetInbox { uid, on } => {
                 format!("UID STORE {uid} {}X-GM-LABELS (\\Inbox)", if *on { '+' } else { '-' })
             }
@@ -207,6 +217,14 @@ impl<S: Read + Write> Session<S> {
             .collect();
         if uids.is_empty() {
             return Err(ImapError::NotFound(message_id.to_string()));
+        }
+        // One message has a copy or two (Sent and received); more is a search that matched
+        // something else, and nothing is changed.
+        if uids.len() > 5 {
+            return Err(ImapError::Protocol(format!(
+                "{} messages matched one Message-ID: nothing changed",
+                uids.len()
+            )));
         }
         for &uid in &uids {
             let reply = self.exec(&Command::SetInbox { uid, on })?;
@@ -507,6 +525,15 @@ mod tests {
             let r = c.render().unwrap();
             assert!(allowed.iter().any(|a| r.starts_with(a)), "{r}");
         }
+    }
+
+    #[test]
+    fn a_message_id_cannot_carry_a_gmail_search() {
+        // 16 Nov: `<abc OR in:inbox>` searched the whole inbox.
+        for bad in ["<abc OR in:inbox>", "", "<>", "abc", "<a@b) OR (in:inbox>", "<a\"@b>"] {
+            assert!(Command::Search(bad.into()).render().is_err(), "{bad:?}");
+        }
+        assert!(Command::Search("<CAF+x.y@mail.gmail.com>".into()).render().is_ok());
     }
 
     #[test]

@@ -143,6 +143,11 @@ def gather(conn: sqlite3.Connection, goal: L.Goal, *, refs: list[str] = (), quer
 
     def add(pieces: list[Piece]) -> None:
         for p in pieces:
+            # locus's own design documents describe his plans in Claude's words: a curriculum
+            # citing its own spec is circular (the first real run did, 16 Nov), so they are not
+            # evidence about him.
+            if p.ref.startswith("doc:locus/"):
+                continue
             if p.ref not in have and p.text.strip():
                 have.add(p.ref)
                 out.append(p)

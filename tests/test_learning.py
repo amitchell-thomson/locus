@@ -92,6 +92,9 @@ def _seed(conn):
              text="Areas for growth - programming. Do data structures and algorithms. trader interview - "
                   "brainteaser/probability", meta={"unit": "section", "doc": 614, "lead": 1}),
     ], embed=fake_embed)
+    index(conn, "repos", [Item(ref="doc:locus/docs/redesign/slices/l-learning.md", kind="doc", at=at, title="spec L",
+                               text="DSA problems written by hand, timed; feedback and weaknesses", thing="locus")],
+          embed=fake_embed)
     return fake_embed
 
 
@@ -129,6 +132,7 @@ def test_a_curriculum_keeps_only_what_its_evidence_holds(conn):
     p = C.propose(conn, "interview-prep", refs=["src:623", "src:614"], queries=["feedback"], ask=ask, embed=embed,
                   rerank=lambda q, hits: hits, today=date(2026, 11, 16))
     assert "src:623#s0" in seen["user"] and "src:614#s0" in seen["user"]
+    assert "doc:locus/" not in seen["user"]                    # its own spec is not evidence about him
     assert p.kept == 3 and {d["topic"] for d in p.dropped} >= {"Deep learning", "Elsewhere"}
     out = C.render(conn, "interview-prep")
     assert "Data structures and algorithms" in out and "Deep learning" not in out

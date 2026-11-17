@@ -195,6 +195,9 @@ pub struct CreateTaskReq {
     /// The project it belongs to (id or name).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
+    /// The due date only bounds the planning: no ⚑ (`Task::soft_due`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub soft_due: Option<bool>,
     /// Create a ⚑ deadline event too (default true when `due` is set).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub create_deadline: Option<bool>,
@@ -229,6 +232,8 @@ pub struct UpdateTaskReq {
     /// `""` clears the deadline.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub due: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub soft_due: Option<bool>,
     /// Plan no work before this (a date or time); `""` clears. A learning goal's pace re-spreads
     /// its topics' windows with it (spec L3).
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -3108,3 +3108,50 @@ fn a_tasks_earliest_start_moves_and_clears() {
         .unwrap();
     assert_eq!(cleared.task.earliest_start, None);
 }
+
+#[test]
+fn a_soft_due_date_plans_the_work_but_draws_no_flag() {
+    // locus spec L3 (17 Nov): a learning topic's window end is a planning target, not a deadline.
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let hard = e.create_task(Author::Alec, &b4(60, "fri 17:00")).unwrap();
+    let soft = e
+        .create_task(
+            Author::Alec,
+            &CreateTaskReq {
+                title: "Markov chains".into(),
+                soft_due: Some(true),
+                ..b4(60, "fri 17:00")
+            },
+        )
+        .unwrap();
+    assert!(soft.task.soft_due && soft.task.due.is_some());
+    assert!(
+        blocks_of(&mut e, &soft.task.id) > 0,
+        "planned before its due date all the same"
+    );
+    let now = *env.now.lock().unwrap();
+    let idx = e
+        .index(now - chrono::Duration::days(1), now + chrono::Duration::days(14))
+        .unwrap();
+    let flags: Vec<_> = idx
+        .instances
+        .iter()
+        .filter(|i| i.uid.starts_with("due-"))
+        .map(|i| i.uid.clone())
+        .collect();
+    assert!(flags.contains(&format!("due-{}", hard.task.id)), "{flags:?}");
+    assert!(!flags.contains(&format!("due-{}", soft.task.id)), "{flags:?}");
+    // and a flag can be turned off on a task made before
+    let off = e
+        .update_task(
+            Author::Alec,
+            &hard.task.id,
+            &kairos_core::api::UpdateTaskReq {
+                soft_due: Some(true),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(off.task.soft_due);
+}

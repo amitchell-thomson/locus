@@ -84,7 +84,8 @@ def test_approving_makes_one_task_per_leaf_topic_in_order_and_never_twice(conn):
     assert [w.title for w, _ in r.created] == ["EV", "r^2 = R^2", "Markov"]
     posted = {c[2]["title"]: c[2] for c in k.calls if c[1] == "/api/tasks"}
     assert {t: p["estimate_min"] for t, p in posted.items()} == {"EV": 180, "Markov": 420, "r^2 = R^2": 120}
-    assert all(p["key"] == "Careers" and p["create_deadline"] is False and p["plan"] is False for p in posted.values())
+    assert all(p["key"] == "Careers" and p["soft_due"] is True and p["create_deadline"] is False
+               and p["plan"] is False for p in posted.values())
     assert posted["EV"]["earliest_start"] == posted["r^2 = R^2"]["earliest_start"] == "2026-11-16"
     assert posted["Markov"]["earliest_start"] == "2026-11-19"       # 3 h at 10/12 of an hour a day
     assert {c[3] for c in k.calls} == {"alec"}                        # he approved it

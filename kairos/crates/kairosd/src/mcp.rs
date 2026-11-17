@@ -767,6 +767,7 @@ impl KairosMcp {
     )]
     async fn create_task(&self, Parameters(a): Parameters<CreateTaskArgs>) -> Result<CallToolResult, ErrorData> {
         let req = api::CreateTaskReq {
+            soft_due: None,
             title: a.title,
             key: a.key,
             estimate_min: a.estimate_min.unwrap_or(0),
@@ -793,6 +794,7 @@ impl KairosMcp {
     )]
     async fn update_task(&self, Parameters(a): Parameters<UpdateTaskArgs>) -> Result<CallToolResult, ErrorData> {
         let req = api::UpdateTaskReq {
+            soft_due: None,
             title: a.title,
             kind: a.kind,
             reopen: a.reopen,

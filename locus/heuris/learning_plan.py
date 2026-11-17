@@ -17,6 +17,10 @@ own at their own pace, so their tasks interleave in the calendar the same way.
 holidays"): the pace on each day is that day's season's (`learning.current_pace`), so a window
 that crosses into the vacation shortens by itself.
 
+**A window's end is soft** (17 Nov: blocks and ⚑ both showed, and the ⚑ read as 32 deadlines):
+`soft_due` makes kairos plan to the date without drawing it. Nothing here is a real deadline;
+the pace is the commitment.
+
 **A window is at least a week** (`MIN_WINDOW_DAYS`): at 5 h a week a 2 h topic's exact share is
 under three days, and a due date that tight turns one busy evening into a shortfall. Windows
 of short topics therefore overlap a little; the scheduler spreads them, and the pace holds over
@@ -201,7 +205,7 @@ def approve(conn: sqlite3.Connection, gid: str, *, kairos: Kairos, today: date |
             continue
         body = {"title": w.title, "key": area, "estimate_min": max(15, round(w.hours * 60)),
                 "earliest_start": w.start.isoformat(), "due": w.due.isoformat(),
-                "create_deadline": False, "plan": False,
+                "soft_due": True, "create_deadline": False, "plan": False,
                 "notes": f"Learning goal {gid} ({g.title}), topic {w.topic}. {why.get(w.topic, '')}\n"
                          f"Sheets and code: ~/files/Learning/{gid}/"}
         if g.thing:

@@ -72,6 +72,11 @@ pub struct Task {
     pub remaining_min: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub due: Option<Due>,
+    /// The due date is a planning target, not a deadline: the scheduler plans to it, but no ⚑
+    /// is drawn. A learning goal's topics (locus spec L3, 17 Nov): each topic's window ends where
+    /// the pace says, and 32 ⚑ a term looked like 32 deadlines.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub soft_due: bool,
     /// UID of the linked deadline event, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deadline_uid: Option<String>,
@@ -157,6 +162,7 @@ impl Task {
             estimate_min,
             remaining_min: estimate_min,
             due: None,
+            soft_due: false,
             deadline_uid: None,
             earliest_start: None,
             priority: 2,
@@ -204,7 +210,7 @@ fn marks(
     use crate::model::{EventKind, Instance, Meta, Span};
     tasks
         .iter()
-        .filter(|t| t.status == status && t.stage.is_none())
+        .filter(|t| t.status == status && t.stage.is_none() && !t.soft_due)
         .filter_map(|t| {
             let due = t.due?;
             let span = match due {

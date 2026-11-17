@@ -2092,6 +2092,7 @@ impl Engine {
             .map(|d| api::parse_time(d, tz, now))
             .transpose()?
             .map(TimeIn::as_due);
+        t.soft_due = req.soft_due.unwrap_or(false);
         t.earliest_start = req
             .earliest_start
             .as_deref()
@@ -2239,6 +2240,9 @@ impl Engine {
                 Some(api::parse_time(d, tz, now)?.as_due())
             };
             due_changed = t.due != before.due;
+        }
+        if let Some(sd) = req.soft_due {
+            t.soft_due = sd;
         }
         if let Some(es) = &req.earliest_start {
             t.earliest_start = if es.trim().is_empty() {

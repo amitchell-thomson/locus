@@ -55,6 +55,9 @@ CREATE TABLE IF NOT EXISTS goal_tasks (
 CREATE INDEX IF NOT EXISTS goal_tasks_goal ON goal_tasks(goal);
 """
 MIN_WINDOW_DAYS = 7
+# A session is 45 to 90 minutes (17 Nov): kairos plans a 3 h task as coursework, in 2 to 3 h
+# blocks, which is one topic for a whole morning; short sessions are what interleaving needs.
+SESSION_MIN, SESSION_MAX = 45, 90
 HORIZON_DAYS = 3 * 365          # a pace of 0 for longer than this is "never", said plainly
 
 Kairos = Callable[..., object]  # locus.kairos_http.call's shape: (method, path, body=None, ...)
@@ -206,6 +209,7 @@ def approve(conn: sqlite3.Connection, gid: str, *, kairos: Kairos, today: date |
         body = {"title": w.title, "key": area, "estimate_min": max(15, round(w.hours * 60)),
                 "earliest_start": w.start.isoformat(), "due": w.due.isoformat(),
                 "soft_due": True, "create_deadline": False, "plan": False,
+                "min_chunk_min": SESSION_MIN, "max_chunk_min": SESSION_MAX,
                 "notes": f"Learning goal {gid} ({g.title}), topic {w.topic}. {why.get(w.topic, '')}\n"
                          f"Sheets and code: ~/files/Learning/{gid}/"}
         if g.thing:

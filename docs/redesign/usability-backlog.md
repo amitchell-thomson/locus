@@ -93,6 +93,14 @@ Each item: what he said, then what it probably involves (a note for later, not a
 - First check why project time looks wrong (measured spans per machine, the 10 minute quiet
   rule, sessions in folders that do not match a registry entry, the out-of-bits rename).
 
+### 6b. The agenda view goes unused; the month view should move by day and week
+
+> "I do not at all use the agenda view in kairos, and I would like to be able to jump both left
+> and right +- 1 day and up and down +- 1 week in the month view."
+
+- Month view: ←/→ a day, ↑/↓ a week, moving the selected day (check against the key table).
+- The agenda view (on ⇥): drop it, or make it earn its place. His call when this comes up.
+
 ---
 
 ## Tasks and Approve
@@ -125,6 +133,24 @@ Each item: what he said, then what it probably involves (a note for later, not a
   approval, so cleanups propose it. Probably exclude OQTS shared from cleanups altogether.
 - Density: a pass on spacing and what each row shows.
 - `f` / `m` (what it is for) dropping his choice: a bug to reproduce and fix.
+
+### 8b. Big threads: slow to move through, hard to follow, hard to answer correctly
+
+> "keryx also has some delay when moving over big threads, and I still find complex threads hard
+> to parse, so wonder if we should build a very good parser that can always understand the chain
+> of events for any combination/ flow of email traffic, and then represent that in a clear human
+> readable way, and allow me to respond in the correct manner to the correct people in response
+> to the correct email, attaching and replying to the correct things."
+
+- Delay: measure moving the bar through a long thread (render or text work per key, not cached).
+- A thread model built from the headers (In-Reply-To, References, To/Cc changes, forwards,
+  attachments) rather than date order: who replied to whom, who joined or dropped off, which
+  message each reply answers. Shown as a readable chain (a tree or timeline with the branch
+  points), with quoted text folded.
+- Replying from that model: the reply goes to the message chosen in the chain, to the people on
+  that branch, with the right attachments carried or offered. Builds on C6's `in_reply_to` rule
+  (a reply answers the message read) and the confirm screen's real quote.
+- Big enough to be its own spec, not a polish item.
 
 ---
 

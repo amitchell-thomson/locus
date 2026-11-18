@@ -51,6 +51,19 @@ Each item: what he said, then what it probably involves (a note for later, not a
 - The layout leaves empty rows between sections at some heights. Let careers and studies take
   the spare rows instead (a layout rule, checked at several terminal sizes).
 
+### 3b. Careers and studies: grouped, with light dividers
+
+> "in the careers view having some separation into pending, success and no success, maybe with
+> small division lines in this view (making sure to be different to the division line with CV),
+> and could do something similar with studies to separate B1-3 (compulsory) from the others
+> (chosen)"
+
+- Careers: three groups in order, pending, success, no success (from each application's stage
+  fact), each under a small divider that looks clearly different from the line above CV (lighter,
+  shorter, or a dotted rule with the group's name).
+- Studies: the compulsory B1 to B3 first, then the chosen options, with the same kind of divider.
+- Fits with item 3: the dividers use rows, so they come with the spare-row layout.
+
 ### 4. The Home chat: a new chat by default
 
 > "trying to chat from home continues in the last chat when it should start a new one unless I

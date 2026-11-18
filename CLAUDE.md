@@ -73,7 +73,9 @@ so the library is filtered and ranked in the same index; the syllabi are items a
   model prose whose pointers are checked against the records it was given.
 - **The tools** (`locus/mcp_server.py` over `locus/heuris/tools.py`): `context`, `search`, `open`,
   `timeline`, `waiting`, `facts`, `remember`, `forget`, plus capture's `capture`, `to_remarkable`
-  and `markups`. Served by `locus serve` (unit `locus-http.service`,
+  and `markups`, and **kairos's and keryx's tools as `kairos_*` and `keryx_*`** (one locus MCP,
+  18 Nov: `locus/mcp_gateway.py` forwards them with MCP-only tokens; the daemons still decide
+  risk; keryxd is reached on the laptop through `tailscale serve` on :7421). Served by `locus serve` (unit `locus-http.service`,
   `http://compute-node:7422/mcp`, bearer token in `~/.config/locus/http.env` on the server and
   Keychain `locus-http-token` on the laptop) and by `locus serve-public` (unit
   `locus-public.service`, OAuth with a passphrase behind Tailscale Funnel, for claude.ai and the
@@ -130,7 +132,9 @@ Most of these were learned by shipping the violation. They apply to everything n
     every write a changeset with before and after images, risk computed and never supplied, the
     live guard, Claude never sends mail. **Claude holds only MCP-only tokens** (16 Nov): kairos's
     `~/.config/kairos/secrets/mcp-token` on the server, keryx's Keychain `keryx-mcp-token`; each
-    works on `/mcp` and nowhere else. Never put a master token in `~/.claude.json` or a chat's
+    works on `/mcp` and nowhere else; the locus gateway holds both on the server
+    (`~/.config/kairos/secrets/mcp-token`, `~/.config/locus/secrets/keryx-mcp-token`), and Claude
+    registers only `locus`. Never put a master token in `~/.claude.json` or a chat's
     `mcp.json`: with it, a session with Bash could call the API as Alec at the keyboard and skip
     approval, or send.
 

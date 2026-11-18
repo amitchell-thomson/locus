@@ -1,11 +1,11 @@
 ---
 name: kairos
-description: Manage Alec's calendar and tasks through the kairos MCP server (iCloud-backed, risk-gated). Use for adding/editing/deleting events (including bulk edits like renaming or cleaning up many lectures), tasks/deadlines, planning work blocks, the weekly review, daily summaries, and explaining what waits in Approve.
+description: Manage Alec's calendar and tasks through the locus MCP server's kairos_ tools (iCloud-backed, risk-gated). Use for adding/editing/deleting events (including bulk edits like renaming or cleaning up many lectures), tasks/deadlines, planning work blocks, the weekly review, daily summaries, and explaining what waits in Approve.
 ---
 
 # kairos
 
-Tools come from the `kairos` MCP server (see kairos/docs/claude-usage.md for registration).
+Tools come through the one `locus` MCP server (18 Nov): each kairos tool is named `kairos_<tool>` there (`kairos_plan`, `kairos_create_task`); where this skill names a tool, call it with that prefix.
 
 Rules:
 1. The server computes risk. (Alec's own edits typed in the TUI/terminal apply directly; anything you do — MCP or `kairos` via Bash — goes through the policy.) Low → applied (undoable). High → `pending`; tell Alec what's pending and how to approve: locus's Approve page (kairos `A` opens it), the one approve place. **Never approve on his behalf** unless he explicitly says yes in this conversation — then run `kairos approve <id>` via Bash.

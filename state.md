@@ -28,6 +28,8 @@
 - L4 sheets and L5 marking (sessions run live until then); progress in `docs/redesign/slices/l-learning.md`.
 - Then the nightly reading digest: spec first.
 - Then a closing pass over the bug-hunt leftovers and gap list (in this session's report).
+- Then his usability backlog (`docs/redesign/usability-backlog.md`, 18 Nov): Home projects list and
+  names, kairos selection jumping, time tracking, learning tasks swamping Tasks, keryx polish, forms.
 
 ## Open
 - The public passphrase now guards mail too: rotate it if it is short or reused.

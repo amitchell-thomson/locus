@@ -13,6 +13,13 @@ Send with the Locus MCP tool: `to_remarkable(latex=..., title=...)`. Author in L
 fragment starting at body text, and give the name as `title` rather than writing your own opening
 heading. If the tool is unavailable, say so plainly rather than sending markdown instead.
 
+Two other ways to send, for things you did not write (they replace the old `/remarkable` command,
+18 Nov): `markdown=` relays text that is ALREADY markdown (his notes, a `.md` file) unchanged, so
+no model rewrites his words; `pdf_path=` pushes an existing PDF untouched (the path resolves on
+the Locus server; if it is not found there, say so and offer LaTeX, rather than trying other
+paths). A LaTeX compile error names the line: fix the source and send again, never fall back to
+markdown to get something through.
+
 ## How to build the explanation
 
 This is the part that decides whether the document works.

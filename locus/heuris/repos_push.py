@@ -1,7 +1,7 @@
 """Repository docs and commits reach the server from the laptop (H1.7).
 
 The laptop is the one place every project's repositories live: oqts is eight repositories in one
-folder, gr-ai-ml is notes with no git, cv has no remote, and the server has clones of only some
+folder, out-of-bits (then gr-ai-ml) was notes with no git, cv has no remote, and the server has clones of only some
 (measured 10 Nov). So each registry project's folder under `~/local-projects/` is read HERE,
 scrubbed, and pushed beside the mail as one JSON file per project.
 

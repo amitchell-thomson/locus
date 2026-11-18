@@ -410,7 +410,7 @@ pub fn destinations(
     for p in items {
         // Where it is filed already, else: a course (or a repo doing a course's work) where
         // courses go (Engineering); an application under Careers; anything else in its own area.
-        // A repo of Projects goes to Projects, never to Engineering by likeness (gr-ai-ml, 10 Nov).
+        // A repo of Projects goes to Projects, never to Engineering by likeness (gr-ai-ml, now out-of-bits, 10 Nov).
         let course_like = p.kind == locus_contract::ProjectKind::Course || p.course.is_some();
         let key = if p.kind == locus_contract::ProjectKind::Application {
             p.area.clone()

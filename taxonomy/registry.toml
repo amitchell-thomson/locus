@@ -96,16 +96,19 @@ course = "b3"
 active = true
 sessions = ["med-ml-3yp"]
 
+# Out of Bits: the project the G-Research AI/ML career track (gresearch-ml) became. Its id was
+# gr-ai-ml until 18 Nov ("GR-AI-ML is a career track that developed into the out-of-bits
+# project"); the old chat folders still count as its sessions.
 [[projects]]
-id = "gr-ai-ml"
-name = "GR AI/ML"
-folder = "gr-ai-ml"
+id = "out-of-bits"
+name = "Out of Bits"
+folder = "out-of-bits"
 area = "Projects"
 kind = "repo"
 state = "live"
 application = "gresearch-ml"
 active = true
-sessions = ["gr-ai-ml"]
+sessions = ["gr-ai-ml", "out-of-bits"]
 
 # regime-ml: built Feb–Mar 2026 (last commit 16 Mar), in the library as src:175; unregistered
 # until 10 Nov, so answers said it had no repo or was an unbuilt idea (H1 fix 3, Y5 and 39).
@@ -325,9 +328,10 @@ kind = "application"
 company = "G-Research"
 active = true
 
+# The career track (G-Research's AI/ML challenges); the work became the Out of Bits project.
 [[projects]]
 id = "gresearch-ml"
-name = "G-Research AI/ML Challenges"
+name = "G-Research AI/ML track"
 folder = "g-research"
 area = "Careers"
 kind = "application"

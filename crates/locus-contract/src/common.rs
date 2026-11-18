@@ -103,7 +103,7 @@ pub struct Project {
     /// to be two kinds is two linked things (ADR-006).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub course: Option<String>,
-    /// The application a repo does the work of (gr-ai-ml for the G-Research AI/ML challenges),
+    /// The application a repo does the work of (out-of-bits for the G-Research AI/ML track),
     /// as `course` is for a course: the repo is a project you build, the application is where
     /// it stands with the firm, and each knows the other (10 Nov: "they should have been
     /// linked and this should be known").

@@ -17,7 +17,7 @@ and the server's headless `-tmp` sessions, which are locus's own jobs; indexing 
 locus read itself (heuris C).
 
 `thing` is the registry entry the session's folder belongs to (`~/local-projects/quast` is
-quast; `~/files/Projects/gr-ai-ml` is gr-ai-ml).
+quast; `~/files/Projects/out-of-bits` is out-of-bits).
 
 Only files whose size or mtime moved since the last run are read (`file_state`), so the index is
 not pruned from here: a deleted transcript's items stay, which is harmless.

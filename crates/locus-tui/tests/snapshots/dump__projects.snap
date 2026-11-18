@@ -9,7 +9,7 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │   󱓟 locus                     󰹇 needs you 20m  wants to restart the locus HTTP … 3 sessions │
 │   󱓟 OQTS                      󰤄 no sessions                                                 │
 │   󱓟 3YP                       󰤄 no sessions                                                 │
-│   󱓟 GR AI/ML                  󰤄 no sessions                                                 │
+│   󱓟 Out of Bits               󰤄 no sessions                                                 │
 │                                                                                             │
 │─ parked · 2 ────────────────────────────────────────────────────────────────────────────────│
 │   󱓟 nabla                     󰹇 needs you 42m  SYNA's vote is close: close the … 8 sessions │

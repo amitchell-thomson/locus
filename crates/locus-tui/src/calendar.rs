@@ -891,6 +891,6 @@ mod approve_tests {
         app.on_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
         let after = crate::ui::home::approve_rows(&app)[at].1.clone();
         assert_ne!(before, after, "→ picks the other application");
-        assert!(after.contains("G-Research AI/ML Challenges"), "{after}");
+        assert!(after.contains("G-Research AI/ML track"), "{after}");
     }
 }

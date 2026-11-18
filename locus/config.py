@@ -429,6 +429,15 @@ class MCPConfig(BaseModel):
     enable_query: bool = Field(
         False, description="Expose the server-side-generating `query` MCP tool (costs API spend)."
     )
+    # One locus MCP (18 Nov): kairos's and keryx's tools served through locus's, as
+    # kairos_<tool> and keryx_<tool> (`locus/mcp_gateway.py`). A backend whose token file is
+    # missing is not served. Tokens are MCP-only: each works on its daemon's /mcp alone.
+    gateway: list[dict] = Field(default_factory=lambda: [
+        {"prefix": "kairos", "url": "http://100.117.10.28:7420/mcp",
+         "token_file": "~/.config/kairos/secrets/mcp-token"},
+        {"prefix": "keryx", "url": "http://alecs-macbook-pro.tailb449e5.ts.net:7421/mcp",
+         "token_file": "~/.config/locus/secrets/keryx-mcp-token"},
+    ], description="Backends whose MCP tools locus serves as its own, prefixed.")
 
 
 class Config(BaseModel):

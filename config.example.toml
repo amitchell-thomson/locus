@@ -65,6 +65,12 @@ max_per_page     = 4              # junk guard
 [mcp]
 # Accepted and ignored since H1 (10 Nov): the billable `query` tool is retired.
 enable_query  = false
+# One locus MCP (18 Nov): these backends' tools are served through locus's own, prefixed
+# (kairos_create_event, keryx_search). A backend whose token file is missing is skipped.
+# gateway = [
+#   { prefix = "kairos", url = "http://100.117.10.28:7420/mcp", token_file = "~/.config/kairos/secrets/mcp-token" },
+#   { prefix = "keryx",  url = "http://alecs-macbook-pro.tailb449e5.ts.net:7421/mcp", token_file = "~/.config/locus/secrets/keryx-mcp-token" },
+# ]
 
 [repos]
 # Tracked code repositories (step 10). `locus watch` checks each repo's git HEAD every

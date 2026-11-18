@@ -181,6 +181,13 @@ def _off_loop(fn):
     return runner
 
 
+def _gateway_config() -> list[dict]:
+    try:
+        return list(load().mcp.gateway)
+    except Exception:  # noqa: BLE001  (no config: no backends; locus's own tools still serve)
+        return []
+
+
 def _build(enable_query: bool = False, host: str = "127.0.0.1", public=None) -> "FastMCP":  # noqa: F821
     """Construct the FastMCP server with its tools registered.
 
@@ -208,6 +215,9 @@ def _build(enable_query: bool = False, host: str = "127.0.0.1", public=None) -> 
                 enable_dns_rebinding_protection=True, allowed_hosts=[netloc, netloc.split(":")[0]],
                 allowed_origins=[base, "https://claude.ai"]),
         )
+    from locus import mcp_gateway
+
+    gateway = mcp_gateway.Gateway([mcp_gateway.Backend(**b) for b in _gateway_config()])
     mcp = FastMCP(
         "locus",
         # The HTTP service (Slice 0.6) binds the Tailscale address; FastMCP's DNS-rebinding guard
@@ -242,8 +252,10 @@ def _build(enable_query: bool = False, host: str = "127.0.0.1", public=None) -> 
             "\"That's wrong\" about a fact means `forget` it. "
             "`capture` saves this conversation's decisions as a rough note; `to_remarkable` sends him "
             "a document to read on paper (anything YOU write goes as LaTeX via `latex=`); `markups` "
-            "reads a document he marked up on the tablet, with the inked pages as images."
-        ),
+            "reads a document he marked up on the tablet, with the inked pages as images. "
+            "Calendar and tasks are the kairos_ tools, mail the keryx_ tools: one server for all "
+            "of it (18 Nov). Their own rules follow."
+        ) + gateway.instructions(),
     )
 
     def tool():
@@ -602,6 +614,7 @@ def _build(enable_query: bool = False, host: str = "127.0.0.1", public=None) -> 
         finally:
             conn.close()
 
+    mcp_gateway.install(mcp, gateway)
     return mcp
 
 

@@ -2115,6 +2115,10 @@ impl Engine {
         if let Some(m) = req.max_chunk_min {
             t.max_chunk_min = m.max(t.min_chunk_min);
         }
+        if let Some(m) = req.ideal_chunk_min {
+            t.ideal_chunk_min = m;
+        }
+        t.after = req.after.clone().filter(|a| !a.trim().is_empty());
         if let Some(w) = &req.preferred_window {
             if self.constraints.window(w).is_none() {
                 return Err(EngineError::BadRequest(format!("unknown window {w:?}")));
@@ -2265,6 +2269,12 @@ impl Engine {
         }
         if let Some(m) = req.max_chunk_min {
             t.max_chunk_min = m.max(t.min_chunk_min);
+        }
+        if let Some(m) = req.ideal_chunk_min {
+            t.ideal_chunk_min = m;
+        }
+        if let Some(a) = &req.after {
+            t.after = if a.trim().is_empty() { None } else { Some(a.clone()) };
         }
         if let Some(w) = &req.preferred_window {
             t.preferred_window = if w.is_empty() { None } else { Some(w.clone()) };

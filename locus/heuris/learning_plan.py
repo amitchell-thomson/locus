@@ -29,6 +29,11 @@ under three days, and a due date that tight turns one busy evening into a shortf
 of short topics therefore overlap a little; the scheduler spreads them, and the pace holds over
 the weeks.
 
+**A topic follows the one before it** (19 Nov): windows of a week overlap, and kairos placed
+17 of cpp-oxdaq's topics before the one they follow (a build before its concepts). Each task
+now names its predecessor (`after`: in rounds the topic before; in a tree the topic before in its
+section) and kairos plans it only after that task's blocks.
+
 **A pace change re-spreads** (L-D7: "easy to change if I want to ramp up or down"): the goal's
 open tasks are walked again from today with what is LEFT of each (kairos's `remaining_min`), and
 each gets its new window. Finished and dropped tasks are left alone.
@@ -135,6 +140,22 @@ def spread(conn: sqlite3.Connection, g: L.Goal, items: list[tuple[int, str, floa
     return lanes(items, _roots(conn, g.id), L.pace_fn(conn, g.id), start)
 
 
+def leaders(conn: sqlite3.Connection, g: L.Goal, topics: list[int]) -> dict[int, int]:
+    """Each topic's predecessor, which kairos plans it after (19 Nov: windows of a week overlap,
+    so without it 17 of cpp-oxdaq's topics were placed before the one they follow, a build
+    among them before its concepts). In rounds, the topic before it; in a tree, the topic before
+    it in its own section, so sections still interleave."""
+    roots = _roots(conn, g.id)
+    last: dict[int, int] = {}
+    out: dict[int, int] = {}
+    for t in topics:
+        lane = 0 if g.shape == "rounds" else roots.get(t, t)
+        if lane in last:
+            out[t] = last[lane]
+        last[lane] = t
+    return out
+
+
 def _roots(conn: sqlite3.Connection, gid: str) -> dict[int, int]:
     parent = dict(conn.execute("SELECT id, parent FROM topics WHERE goal=?", (gid,)).fetchall())
     out = {}
@@ -212,24 +233,32 @@ def approve(conn: sqlite3.Connection, gid: str, *, kairos: Kairos, today: date |
     have = {r[0] for r in conn.execute("SELECT topic FROM goal_tasks WHERE goal=?", (gid,))}
     ws = spread(conn, g, [(t, title, h) for t, title, h, _ in leaves], today or date.today())
     why = {t: w for t, _, _, w in leaves}
+    follows = leaders(conn, g, [t for t, _, _, _ in leaves])
+    have_task = tasks_of(conn, gid)
     created: list[tuple[Window, str]] = []
-    for w in ws:
+    # Made in curriculum order, so the task a topic follows always exists first.
+    order = {t: k for k, (t, _, _, _) in enumerate(leaves)}
+    for w in sorted(ws, key=lambda w: order[w.topic]):
         if w.topic in have:
             continue
         body = {"title": w.title, "key": area, "estimate_min": max(15, round(w.hours * 60)),
                 "earliest_start": w.start.isoformat(), "due": w.due.isoformat(),
                 "soft_due": True, "create_deadline": False, "plan": False,
-                "min_chunk_min": SESSION_MIN, "max_chunk_min": SESSION_MAX,
+                "min_chunk_min": SESSION_MIN, "max_chunk_min": SESSION_MAX, "ideal_chunk_min": SESSION_MIN,
                 "notes": f"Learning goal {gid} ({g.title}), topic {w.topic}. {why.get(w.topic, '')}\n"
                          f"Sheets and code: ~/files/Learning/{gid}/"}
         if g.thing:
             body["locus"] = g.thing
+        if (lead := follows.get(w.topic)) is not None and (lt := have_task.get(lead)):
+            body["after"] = lt
         resp = kairos("POST", "/api/tasks", body, author="alec")
         tid = resp["task"]["id"]
         with conn:
             conn.execute("INSERT INTO goal_tasks(topic, goal, task_id, created) VALUES (?,?,?,?)",
                          (w.topic, gid, tid, datetime.now(timezone.utc).isoformat(timespec="seconds")))
+        have_task[w.topic] = tid
         created.append((w, tid))
+    created.sort(key=lambda c: (c[0].start, order[c[0].topic]))
     p = kairos("POST", "/api/plan", {"dry_run": False}, author="alec") if created else None
     return Approved(g, created, len(ws) - len(created), (p or {}).get("summary", "nothing new to plan"))
 
@@ -258,10 +287,17 @@ def respread(conn: sqlite3.Connection, gid: str, *, kairos: Kairos, today: date 
             continue
         items.append((topic, title, t["remaining_min"] / 60))
         ids[topic] = task_id
-    ws = spread(conn, L.get_goal(conn, gid), items, today or date.today())
+    g = L.get_goal(conn, gid)
+    ws = spread(conn, g, items, today or date.today())
+    # A finished topic holds nothing back, so each open one follows the open one before it.
+    follows = leaders(conn, g, [t for t, _, _ in items])
     for w in ws:
+        lead = follows.get(w.topic)
         kairos("PATCH", f"/api/tasks/{ids[w.topic]}",
-               {"earliest_start": w.start.isoformat(), "due": w.due.isoformat(), "plan": False}, author="alec")
+               {"earliest_start": w.start.isoformat(), "due": w.due.isoformat(), "plan": False,
+                "after": ids[lead] if lead is not None else "",
+                "min_chunk_min": SESSION_MIN, "max_chunk_min": SESSION_MAX, "ideal_chunk_min": SESSION_MIN},
+               author="alec")
     p = kairos("POST", "/api/plan", {"dry_run": False}, author="alec") if ws else None
     return len(ws), (p or {}).get("summary", "")
 

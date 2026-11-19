@@ -116,6 +116,11 @@ pub struct Task {
     /// date is the event's start and follows it when the event moves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub before: Option<String>,
+    /// Planned only after this task's blocks (19 Nov, locus learning): a topic follows the one
+    /// before it in its curriculum, so a build never lands before the concepts it uses. Only
+    /// while that task is open; a finished or dropped one no longer holds this back.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after: Option<String>,
     pub created_by: Author,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -179,6 +184,7 @@ impl Task {
             registry: None,
             locus: None,
             before: None,
+            after: None,
             created_by,
             created_at: now,
             updated_at: now,

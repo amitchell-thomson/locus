@@ -1073,3 +1073,76 @@ fn a_chore_takes_the_smallest_gap_it_fits_not_the_long_ones() {
         (after - before).num_minutes()
     );
 }
+
+/// A curriculum's order (19 Nov): three topics in overlapping windows, the later ones with the
+/// earlier deadlines and less slack, so plain EDF would plan them first. Each must start only
+/// once the one it follows has ended, fresh and on a replan that keeps blocks.
+#[test]
+fn a_task_after_another_is_planned_after_it() {
+    let mut a = task("concepts", 180, Some("2026-10-23 17:00"));
+    let mut b = task("more-concepts", 90, Some("2026-10-21 17:00"));
+    let mut c = task("build", 180, Some("2026-10-20 17:00"));
+    for t in [&mut a, &mut b, &mut c] {
+        t.max_chunk_min = 90;
+        t.min_chunk_min = 45;
+    }
+    b.after = Some("concepts".into());
+    c.after = Some("more-concepts".into());
+    let tasks = [c, a, b];
+    let check = |p: &Plan| {
+        let blocks: Vec<&Block> = p.keep.iter().chain(&p.create).collect();
+        let span = |id: &str| {
+            let v: Vec<_> = blocks.iter().filter(|x| x.task_id == id).collect();
+            assert!(!v.is_empty(), "{id} has no blocks: {:?}", p.shortfalls);
+            (
+                v.iter().map(|x| x.start).min().unwrap(),
+                v.iter().map(|x| x.end).max().unwrap(),
+            )
+        };
+        let (a, b, c) = (span("concepts"), span("more-concepts"), span("build"));
+        assert!(
+            b.0 >= a.1,
+            "more-concepts {} before concepts ends {}",
+            local(b.0),
+            local(a.1)
+        );
+        assert!(
+            c.0 >= b.1,
+            "build {} before more-concepts ends {}",
+            local(c.0),
+            local(b.1)
+        );
+    };
+    let p = run_plan("2026-10-12 08:00", &tasks, &lectures(), &[]);
+    check(&p);
+    check_invariants(at("2026-10-12 08:00"), &tasks, &lectures(), &p).unwrap();
+    // Replanned with its own blocks plus a stale follower block placed too early: that one goes.
+    let mut existing: Vec<Block> = p.create.clone();
+    for (k, b) in existing.iter_mut().enumerate() {
+        b.uid = Some(format!("u{k}"));
+    }
+    let first = existing.iter().map(|b| b.start).min().unwrap();
+    if let Some(early) = existing.iter_mut().find(|b| b.task_id == "build") {
+        early.start = first - chrono::Duration::hours(24);
+        early.end = early.start + chrono::Duration::minutes(90);
+    }
+    let p2 = run_plan("2026-10-12 08:00", &tasks, &lectures(), &existing);
+    check(&p2);
+}
+
+/// A learning session's sizes (45 to 90 min, ideal 45) split a 2 h topic in two, where the
+/// coursework type's ideal of 120 made one 2 h block.
+#[test]
+fn an_ideal_below_the_longest_block_splits_two_hours_in_two() {
+    let mut t = task("topic", 120, Some("2026-10-23 17:00"));
+    t.min_chunk_min = 45;
+    t.max_chunk_min = 90;
+    t.ideal_chunk_min = 45;
+    let p = run_plan("2026-10-12 08:00", std::slice::from_ref(&t), &lectures(), &[]);
+    assert_eq!(total(&p, "topic"), 120);
+    assert!(
+        p.create.iter().all(|b| b.minutes() <= 90),
+        "{:?}",
+        p.create.iter().map(Block::minutes).collect::<Vec<_>>()
+    );
+}

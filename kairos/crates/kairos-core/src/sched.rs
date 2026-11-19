@@ -391,7 +391,30 @@ fn ordered_needs<'t>(input: &PlanInput<'_>, tasks: &'t [Task], g: &Grid<'_>, hor
             .then(a.task.priority.cmp(&b.task.priority))
             .then(a.task.id.cmp(&b.task.id))
     });
+    // A task planned `after` another comes after it in the turns, whatever its deadline: its
+    // blocks start where the other's end. Chains are short and acyclic in practice; the bound
+    // stops a cycle (a after b after a) looping.
+    for _ in 0..v.len() {
+        let pos: BTreeMap<&str, usize> = v.iter().enumerate().map(|(k, n)| (n.task.id.as_str(), k)).collect();
+        let bad = v.iter().enumerate().find_map(|(k, n)| {
+            let p = *pos.get(n.task.after.as_deref()?)?;
+            (p > k).then_some((k, p))
+        });
+        let Some((k, p)) = bad else { break };
+        let n = v.remove(k);
+        v.insert(p, n);
+    }
     v
+}
+
+/// The slot after which `n`'s work may go: the end of the last block of the task it follows.
+fn after_idx(st: &State, n: &Need<'_>) -> usize {
+    n.task
+        .after
+        .as_deref()
+        .and_then(|a| st.chunks.get(a))
+        .and_then(|c| c.iter().map(|&(_, b)| b).max())
+        .unwrap_or(0)
 }
 
 /// Score of a placement for a task: higher is better.
@@ -590,7 +613,7 @@ fn find_chunk(g: &Grid<'_>, st: &State, n: &Need<'_>, remaining: usize, tier: Ti
     let t = n.task;
     let (min_len, limit, comfort) = n.tier(tier, remaining);
     let target = n.target_len(remaining).max(min_len);
-    let lo = n.earliest_idx;
+    let lo = n.earliest_idx.max(after_idx(st, n));
     let hi = limit.min(g.n);
     if lo >= hi {
         return None;
@@ -767,6 +790,7 @@ fn run(input: &PlanInput<'_>, g: &Grid<'_>, horizon_idx: usize, keep_existing: b
             }
             plan.keep.push(b.clone());
         } else if keep_existing
+            && leader_done(&needs, &remaining, &st, &b.task_id, i)
             && need > 0
             && len > 0
             // Not longer than what's left (the task shrank: replace it).
@@ -785,6 +809,7 @@ fn run(input: &PlanInput<'_>, g: &Grid<'_>, horizon_idx: usize, keep_existing: b
         }
     }
 
+    let pos: BTreeMap<&str, usize> = needs.iter().enumerate().map(|(k, n)| (n.task.id.as_str(), k)).collect();
     let turns: Vec<(usize, Tier)> = if lead_first {
         TIERS
             .into_iter()
@@ -795,6 +820,15 @@ fn run(input: &PlanInput<'_>, g: &Grid<'_>, horizon_idx: usize, keep_existing: b
     };
     for (k, tier) in turns {
         let n = &needs[k];
+        // A follower waits while its leader still has work to place, until the last tier: in
+        // `lead_first` turns its ideal turn comes before the leader's shorter ones.
+        if tier != Tier::Overload
+            && let Some(a) = n.task.after.as_deref()
+            && pos.contains_key(a)
+            && remaining.get(a).copied().unwrap_or(0) > 0
+        {
+            continue;
+        }
         let Some(rem) = remaining.get_mut(n.task.id.as_str()) else {
             continue;
         };
@@ -865,6 +899,21 @@ fn run(input: &PlanInput<'_>, g: &Grid<'_>, horizon_idx: usize, keep_existing: b
     plan.delete.sort_by_key(|b| b.start);
     plan.squeezed = squeezes(input, g, &needs, &plan);
     (plan, total_short)
+}
+
+/// Whether a kept block of `task` at slot `i` respects its `after`: the task it follows (if open
+/// and planned here) has all its work in place, ending at or before `i`.
+fn leader_done(needs: &[Need<'_>], remaining: &BTreeMap<&str, usize>, st: &State, task: &str, i: usize) -> bool {
+    let Some(n) = needs.iter().find(|n| n.task.id == task) else {
+        return true;
+    };
+    let Some(a) = n.task.after.as_deref() else {
+        return true;
+    };
+    if !needs.iter().any(|m| m.task.id == a) {
+        return true;
+    }
+    remaining.get(a).copied().unwrap_or(0) == 0 && after_idx(st, n) <= i
 }
 
 /// A state holding `blocks` (and the grid's busy events).

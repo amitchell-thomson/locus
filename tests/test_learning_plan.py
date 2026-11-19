@@ -95,7 +95,7 @@ def test_approving_makes_one_task_per_leaf_topic_in_order_and_never_twice(conn):
     assert states == {"current"}
     again = LP.approve(conn, "interview-prep", kairos=k, today=D)
     assert again.created == [] and again.kept == 3 and len(k.tasks) == 3
-    assert LP.tasks_of(conn, "interview-prep")[ids["c"]] == "t2"
+    assert LP.tasks_of(conn, "interview-prep")[ids["c"]] == "t3"           # made in curriculum order
 
 
 def test_a_pace_change_re_spreads_what_is_left_of_the_open_tasks(conn):
@@ -198,6 +198,24 @@ def test_a_goal_in_rounds_is_walked_in_order_not_side_by_side(conn):
     assert ws["r^2 = R^2"].start == date(2026, 11, 26)              # after all ten hours of the first
     k = FakeKairos()
     LP.approve(conn, "interview-prep", kairos=k, today=D)
-    assert [b["earliest_start"] for _, p, b, _ in k.calls if p == "/api/tasks"] == \
-        ["2026-11-16", "2026-11-19", "2026-11-26"]
+    made = [b for _, p, b, _ in k.calls if p == "/api/tasks"]
+    assert [b["earliest_start"] for b in made] == ["2026-11-16", "2026-11-19", "2026-11-26"]
+    # each follows the one before it, whatever its section; sessions prefer 45 to 90 min
+    assert [b.get("after") for b in made] == [None, "t1", "t2"]
+    assert all(b["ideal_chunk_min"] == 45 and b["max_chunk_min"] == 90 for b in made)
     assert ids
+
+
+def test_a_tree_goal_chains_topics_within_each_section_only(conn):
+    _goal(conn)
+    k = FakeKairos()
+    LP.approve(conn, "interview-prep", kairos=k, today=D)
+    made = {b["title"]: b for _, p, b, _ in k.calls if p == "/api/tasks"}
+    tid = {b["title"]: t for t, b in k.tasks.items()}
+    assert made["Markov"]["after"] == tid["EV"]
+    assert "after" not in made["EV"] and "after" not in made["r^2 = R^2"]     # sections start together
+    # a re-spread keeps the chain and the session sizes on what is still open
+    k.tasks[tid["EV"]]["status"] = "done"
+    LP.respread(conn, "interview-prep", kairos=k, today=D)
+    patches = {path.rsplit("/", 1)[-1]: b for m, path, b, _ in k.calls if m == "PATCH"}
+    assert patches[tid["Markov"]]["after"] == "" and patches[tid["Markov"]]["ideal_chunk_min"] == 45

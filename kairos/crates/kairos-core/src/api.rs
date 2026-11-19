@@ -208,6 +208,14 @@ pub struct CreateTaskReq {
     /// `""` clears (update only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub before: Option<String>,
+    /// Plan it only after this task's blocks (a task id): a curriculum's order. `""` clears
+    /// (update only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after: Option<String>,
+    /// Preferred shortest block, overriding the task type's (learning sessions: 45 to 90 min,
+    /// where coursework prefers 120).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ideal_chunk_min: Option<u32>,
     /// The locus item it belongs to (a registry id).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locus: Option<String>,
@@ -262,6 +270,14 @@ pub struct UpdateTaskReq {
     /// The locus item it belongs to ("" = none).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locus: Option<String>,
+    /// Plan it only after this task's blocks (a task id): a curriculum's order. `""` clears
+    /// (update only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after: Option<String>,
+    /// Preferred shortest block, overriding the task type's (learning sessions: 45 to 90 min,
+    /// where coursework prefers 120).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ideal_chunk_min: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]

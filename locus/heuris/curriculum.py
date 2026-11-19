@@ -397,3 +397,54 @@ def export(conn: sqlite3.Connection) -> dict:
             goal["summary"] = cur[0]
         goals.append(goal)
     return {"goals": goals, "tracks": list(tracks.values()), "sheets": []}
+
+
+# --- adding to an approved curriculum ------------------------------------------------------------
+
+def add_topics(conn: sqlite3.Connection, gid: str, topics: list[dict], *, parent: int | None = None,
+               before: int | None = None) -> list[int]:
+    """Topics he asked for, added to the CURRENT curriculum without re-proposing it (19 Nov:
+    machine learning theory and Python iterators; a fresh proposal would rewrite every topic and
+    its task). Each dict: key, title, track, hours, weight, why, evidence [{ref, quote}], and
+    optionally `parent` (another new topic's key). New top-level topics hang under `parent` (an
+    existing topic id) if given; all go in before the topic `before`, or at the end. Grounded
+    like a proposal, all or nothing: a quote not found in its pointer refuses the lot. Tasks
+    come from `learning_plan.approve`, which makes the missing ones."""
+    ensure(conn)
+    L.get_goal(conn, gid)
+    parsed = [_Topic.model_validate(t) for t in topics]
+    for t in parsed:
+        if not t.evidence:
+            raise L.LearningError(f"{t.title!r} has no evidence")
+        for ev in t.evidence:
+            texts = [_norm(p.text) for p in _item(conn, ev.ref, NAMED_ITEM_CHARS)]
+            if not texts and ev.ref.startswith("fact:"):
+                from locus.heuris import facts as F
+                f = F.get(conn, int(ev.ref.split(":", 1)[1]))
+                texts = [_norm(f.value)] if f else []
+            if not any(_norm(ev.quote) in x for x in texts):
+                raise L.LearningError(f"{t.title!r}: {ev.quote!r} is not in {ev.ref}")
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    with conn:
+        if before is not None:
+            pos = conn.execute("SELECT ord FROM topics WHERE id=?", (before,)).fetchone()[0]
+        else:
+            pos = (conn.execute("SELECT MAX(ord) FROM topics WHERE goal=? AND state='current'", (gid,)).fetchone()[0] or 0) + 1
+        conn.execute("UPDATE topics SET ord = ord + ? WHERE goal=? AND state='current' AND ord >= ?",
+                     (len(parsed), gid, pos))
+        ids: dict[str, int] = {}
+        for k, t in enumerate(parsed):
+            par = ids[t.parent] if t.parent else parent
+            tid = conn.execute(
+                "INSERT INTO topics(goal, parent, ord, track, title, hours, weight, state, created) "
+                "VALUES (?,?,?,?,?,?,?,'current',?)",
+                (gid, par, pos + k, t.track, t.title, t.hours, t.weight, now)).lastrowid
+            ids[t.key] = tid
+            for ev in t.evidence:
+                conn.execute("INSERT INTO topic_evidence(topic, ref, quote, why) VALUES (?,?,?,?)",
+                             (tid, ev.ref, ev.quote, t.why))
+        # An existing parent's hours are its children's sum.
+        if parent is not None:
+            added = sum(t.hours for t in parsed if not t.parent)
+            conn.execute("UPDATE topics SET hours = hours + ? WHERE id=?", (added, parent))
+    return list(ids.values())

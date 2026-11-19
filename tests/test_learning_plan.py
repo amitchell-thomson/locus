@@ -234,3 +234,29 @@ def test_days_away_carry_no_pace(conn, monkeypatch):
     # EV's 3 h at 10/12 of an hour a day (its lane's share) ends on the 19th without the days
     # away (test above); skipping the 17th and 18th, on the 21st
     assert ws["Markov"].start == date(2026, 11, 21)
+
+
+def test_topics_he_asks_for_join_the_current_curriculum_grounded_all_or_nothing(conn):
+    """19 Nov: ML theory and Python iterators added without re-proposing (which would rewrite
+    every topic and its task)."""
+    from locus.heuris import curriculum as C
+    from locus.heuris import facts as F
+
+    ids = _goal(conn, state="current")
+    f = F.write(conn, "me", "decision:curriculum-additions", "add machine learning theory and Python iterators",
+                route="chat", sources=["he said so in a chat, 2026-11-19"]).fact
+    ev = [{"ref": f"fact:{f.id}", "quote": "Python iterators"}]
+    with pytest.raises(L.LearningError, match="is not in"):
+        C.add_topics(conn, "interview-prep", [{"key": "x", "track": "t", "title": "X", "hours": 1, "weight": 1,
+                                                "why": "w", "evidence": [{"ref": f"fact:{f.id}", "quote": "Rust"}]}])
+    assert conn.execute("SELECT COUNT(*) FROM topics WHERE title='X'").fetchone()[0] == 0
+    new = C.add_topics(conn, "interview-prep", [{"key": "it", "track": "python", "title": "Iterators", "hours": 2,
+                                                  "weight": 2, "why": "asked", "evidence": ev}],
+                       parent=ids["p"], before=ids["a"])
+    order = [r[0] for r in conn.execute("SELECT title FROM topics WHERE goal='interview-prep' ORDER BY ord")]
+    assert order == ["Probability", "Iterators", "EV", "Markov", "r^2 = R^2"]
+    assert conn.execute("SELECT hours FROM topics WHERE id=?", (ids["p"],)).fetchone()[0] == 12
+    # approving again makes only the new topic's task
+    k = FakeKairos()
+    LP.approve(conn, "interview-prep", kairos=k, today=D)
+    assert len(k.tasks) == 4 and new[0] in LP.tasks_of(conn, "interview-prep")

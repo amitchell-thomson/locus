@@ -1,6 +1,6 @@
 # locus: where it stands
 
-**As of:** 2026-11-18 · **State:** live
+**As of:** 2026-11-19 · **State:** live
 
 ## Now
 - Mail, calendar, tasks, chats, repos, library, syllabi and his notes in one index (heuris),
@@ -10,8 +10,9 @@
   (817 of 1,742 topics covered); Q31 passes.
 - One locus MCP (18 Nov): kairos's and keryx's tools served through locus as `kairos_*` and
   `keryx_*`; Claude registers only `locus`. Mail tools need the laptop awake (keryxd reads Mac Mail).
-- Learning (spec L) L1 to L3: interview-prep agreed 17 Nov, 32 topic tasks at 4 h a week in term
-  and 8 in vacations, 45 to 90 minute sessions, done around 21 April 2027.
+- Learning (spec L) L1 to L3, and L8's G2 half: interview-prep (38 topics, ML theory added) and
+  cpp-oxdaq (64, built from ROUNDS.md in rounds) live in kairos at 5 h a week in term and 8 in
+  vacations each; sessions adjust their topic and `locus learn sync` re-spreads (19 Nov).
 - 16 Nov bug hunt: six reviewers, ~70 findings; the serious ones fixed with tests (privacy
   scrubbing, mail envelopes, ledger duplicates, Approve acting on the wrong item, kairos and
   keryx approval bypasses, Claude's own MCP-only tokens).
@@ -24,10 +25,9 @@
 - 2026-11-13: order C, P, L; the Project window goes.
 
 ## Next
-- Learning: interview-prep (38 topics) and cpp-oxdaq (64, in rounds) approved and in kairos (19 Nov).
-  Topics follow the one before (`after`); rounds are asap, trees spread; term leans to weekends;
-  kairos `away` profile (Christmas, 28 Dec to 3 Jan) carries no pace. R12 about 24 Apr.
-- L4 sheets and L5 marking (sessions run live until then); progress in `docs/redesign/slices/l-learning.md`.
+- L4 sheets (the baseline first) and L5 marking, then L6 (Learning screen live), L7 (code
+  practice), L8's G3 (quast), L9 report; progress in `docs/redesign/slices/l-learning.md`.
+  Kairos now has `after`, `asap`, `term_weekend_bias`, `PlanReq.replan` and an `away` profile.
 - Then the nightly reading digest: spec first.
 - Then a closing pass over the bug-hunt leftovers and gap list (in this session's report).
 - Then his usability backlog (`docs/redesign/usability-backlog.md`, 18 Nov): Home projects list and

@@ -2119,6 +2119,8 @@ impl Engine {
             t.ideal_chunk_min = m;
         }
         t.after = req.after.clone().filter(|a| !a.trim().is_empty());
+        t.asap = req.asap.unwrap_or(false);
+        t.term_weekend_bias = req.term_weekend_bias.unwrap_or(false);
         if let Some(w) = &req.preferred_window {
             if self.constraints.window(w).is_none() {
                 return Err(EngineError::BadRequest(format!("unknown window {w:?}")));
@@ -2275,6 +2277,12 @@ impl Engine {
         }
         if let Some(a) = &req.after {
             t.after = if a.trim().is_empty() { None } else { Some(a.clone()) };
+        }
+        if let Some(x) = req.asap {
+            t.asap = x;
+        }
+        if let Some(x) = req.term_weekend_bias {
+            t.term_weekend_bias = x;
         }
         if let Some(w) = &req.preferred_window {
             t.preferred_window = if w.is_empty() { None } else { Some(w.clone()) };

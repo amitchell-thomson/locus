@@ -17,6 +17,7 @@ D = date(2026, 11, 16)
 def no_terms(monkeypatch):
     """Never kairos's live constraints file: no terms, every day vacation (CLAUDE.md §9)."""
     monkeypatch.setattr(L, "_terms_cache", [])
+    monkeypatch.setattr(L, "_away_cache", [])
 
 
 @pytest.fixture
@@ -203,6 +204,7 @@ def test_a_goal_in_rounds_is_walked_in_order_not_side_by_side(conn):
     # each follows the one before it, whatever its section; sessions prefer 45 to 90 min
     assert [b.get("after") for b in made] == [None, "t1", "t2"]
     assert all(b["ideal_chunk_min"] == 45 and b["max_chunk_min"] == 90 for b in made)
+    assert all(b["asap"] and b["term_weekend_bias"] for b in made)
     assert ids
 
 
@@ -219,3 +221,13 @@ def test_a_tree_goal_chains_topics_within_each_section_only(conn):
     LP.respread(conn, "interview-prep", kairos=k, today=D)
     patches = {path.rsplit("/", 1)[-1]: b for m, path, b, _ in k.calls if m == "PATCH"}
     assert patches[tid["Markov"]]["after"] == "" and patches[tid["Markov"]]["ideal_chunk_min"] == 45
+
+
+def test_days_away_carry_no_pace(conn, monkeypatch):
+    """19 Nov: Christmas and 28 Dec to 3 Jan are kairos's `away` days; the walk skips them."""
+    _goal(conn)
+    monkeypatch.setattr(L, "_away_cache", [(date(2026, 11, 17), date(2026, 11, 18))])
+    ws = {w.title: w for w in LP.plan_preview(conn, "interview-prep", today=D)}
+    # EV's 3 h at 10/12 of an hour a day (its lane's share) ends on the 19th without the days
+    # away (test above); skipping the 17th and 18th, on the 21st
+    assert ws["Markov"].start == date(2026, 11, 21)

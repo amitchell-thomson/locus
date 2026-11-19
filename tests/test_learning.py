@@ -15,6 +15,7 @@ from locus.heuris import learning as L
 def no_terms(monkeypatch):
     """Never kairos's live constraints file: no terms, every day vacation (CLAUDE.md §9)."""
     monkeypatch.setattr(L, "_terms_cache", [])
+    monkeypatch.setattr(L, "_away_cache", [])
 
 
 @pytest.fixture

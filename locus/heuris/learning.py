@@ -121,6 +121,31 @@ def term_ranges() -> list[tuple[date, date]]:
     return _terms_cache
 
 
+_away_cache: list[tuple[date, date]] | None = None
+
+
+def away_ranges() -> list[tuple[date, date]]:
+    """Days he is away (kairos's `[[profiles]] name = "away"`, 19 Nov: Christmas and 28 Dec to
+    3 Jan): kairos schedules nothing then, so the pace walk gives them nothing either, and a
+    topic's window does not count on hours those days cannot hold."""
+    global _away_cache
+    if _away_cache is None:
+        import tomllib
+        from pathlib import Path
+
+        out: list[tuple[date, date]] = []
+        try:
+            cfg = tomllib.loads(Path(CONSTRAINTS).expanduser().read_text())
+            for prof in cfg.get("profiles", []):
+                if prof.get("name") == "away":
+                    for r in prof.get("dates", []):
+                        out.append((date.fromisoformat(str(r["from"])), date.fromisoformat(str(r["to"]))))
+        except (OSError, ValueError, KeyError):
+            out = []
+        _away_cache = out
+    return _away_cache
+
+
 def season_of(d: date, terms: list[tuple[date, date]] | None = None) -> str:
     terms = term_ranges() if terms is None else terms
     return "term" if any(a <= d <= b for a, b in terms) else "vacation"
@@ -234,10 +259,12 @@ def pace_fn(conn: sqlite3.Connection, gid: str, terms: list[tuple[date, date]] |
     """The weekly pace on any day, cached: what the schedule and the finish date walk."""
     cache: dict[date, float] = {}
 
+    away = away_ranges()
+
     def at(d: date) -> float:
         if d not in cache:
             p = current_pace(conn, gid, on=d, terms=terms)
-            cache[d] = p[0] if p else 0.0
+            cache[d] = 0.0 if any(a <= d <= b for a, b in away) else (p[0] if p else 0.0)
         return cache[d]
     return at
 

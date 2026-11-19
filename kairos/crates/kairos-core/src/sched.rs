@@ -649,6 +649,20 @@ fn find_chunk(g: &Grid<'_>, st: &State, n: &Need<'_>, remaining: usize, tier: Ti
     if total <= target as i64 {
         order.sort_by_key(|o| o.1);
     }
+    // An `asap` task goes on the earliest day with room, a day it has no block on yet first (a
+    // topic's sessions on different days); with `term_weekend_bias`, a term Thursday or Friday
+    // counts as two and a half days later, so the weekend after it wins and earlier weekdays
+    // still go first.
+    if t.asap {
+        let placed: BTreeMap<NaiveDate, bool> = days.iter().map(|(d, v)| (*d, v.1 > 0)).collect();
+        let half_days = |d: NaiveDate| {
+            let base = i64::from(d.num_days_from_ce()) * 2;
+            let term = g.c.profile_for(d).is_some_and(|p| p.name == "term");
+            let late_week = matches!(d.weekday(), chrono::Weekday::Thu | chrono::Weekday::Fri);
+            base + if t.term_weekend_bias && term && late_week { 5 } else { 0 }
+        };
+        order.sort_by_key(|o| (placed.get(&o.1).copied().unwrap_or(false), half_days(o.1)));
+    }
     let first_day = order.iter().map(|o| o.1).min();
     // The first day (in spreading order) that fits a full-size block wins;
     // if none does, the day that fits the longest one (not merely the first

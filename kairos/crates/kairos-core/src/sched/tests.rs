@@ -1146,3 +1146,42 @@ fn an_ideal_below_the_longest_block_splits_two_hours_in_two() {
         p.create.iter().map(Block::minutes).collect::<Vec<_>>()
     );
 }
+
+/// `asap` (19 Nov): a learning topic's window comes from his weekly pace, so its work goes at
+/// the start, one session a day, instead of being spread towards the due date.
+#[test]
+fn an_asap_task_starts_at_the_front_of_its_window_one_session_a_day() {
+    let mut t = task("topic", 180, Some("2026-10-23 17:00"));
+    t.min_chunk_min = 45;
+    t.max_chunk_min = 90;
+    t.ideal_chunk_min = 45;
+    // Monday mostly taken: spreading by free time puts the work on emptier days later on.
+    let busy = [busy("2026-10-12 09:00", "2026-10-12 17:00")];
+    let days = |p: &Plan| {
+        p.create
+            .iter()
+            .map(|b| local(b.start)[..6].to_string())
+            .collect::<Vec<_>>()
+    };
+    let spread = run_plan("2026-10-12 08:00", std::slice::from_ref(&t), &busy, &[]);
+    t.asap = true;
+    let p = run_plan("2026-10-12 08:00", std::slice::from_ref(&t), &busy, &[]);
+    assert_eq!(days(&p), ["Mon 12", "Tue 13"], "spread gave {:?}", days(&spread));
+    assert_ne!(days(&spread), days(&p));
+}
+
+/// `term_weekend_bias` (19 Nov): in term a Thursday or Friday gives way to the weekend after
+/// it; a Monday still goes first, and without the bias Thursday goes first.
+#[test]
+fn in_term_a_weekend_bias_moves_late_week_work_to_the_weekend_only() {
+    let mut t = task("topic", 90, Some("2026-10-23 17:00"));
+    t.min_chunk_min = 45;
+    t.max_chunk_min = 90;
+    t.asap = true;
+    let first =
+        |now: &str, t: &Task| local(run_plan(now, std::slice::from_ref(t), &[], &[]).create[0].start)[..3].to_string();
+    assert_eq!(first("2026-10-15 08:00", &t), "Thu");
+    t.term_weekend_bias = true;
+    assert_eq!(first("2026-10-15 08:00", &t), "Sat");
+    assert_eq!(first("2026-10-12 08:00", &t), "Mon");
+}

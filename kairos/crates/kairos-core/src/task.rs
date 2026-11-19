@@ -121,6 +121,15 @@ pub struct Task {
     /// while that task is open; a finished or dropped one no longer holds this back.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub after: Option<String>,
+    /// Placed as early as its window allows, not spread towards its due date (19 Nov, locus
+    /// learning): a topic's window comes from his weekly pace, so work done at its start keeps
+    /// to the pace, and spreading a chain of topics slid term work into the vacations' hours.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub asap: bool,
+    /// In term, a slight lean towards weekends (19 Nov: "weekends in oxford are usually less
+    /// busy"): a Thursday or Friday gives way to the weekend after it; earlier weekdays don't.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub term_weekend_bias: bool,
     pub created_by: Author,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -185,6 +194,8 @@ impl Task {
             locus: None,
             before: None,
             after: None,
+            asap: false,
+            term_weekend_bias: false,
             created_by,
             created_at: now,
             updated_at: now,

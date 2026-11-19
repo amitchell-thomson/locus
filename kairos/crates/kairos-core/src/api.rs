@@ -216,6 +216,12 @@ pub struct CreateTaskReq {
     /// where coursework prefers 120).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ideal_chunk_min: Option<u32>,
+    /// Place as early as the window allows (`Task::asap`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asap: Option<bool>,
+    /// In term, lean slightly towards weekends (`Task::term_weekend_bias`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub term_weekend_bias: Option<bool>,
     /// The locus item it belongs to (a registry id).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locus: Option<String>,
@@ -278,6 +284,12 @@ pub struct UpdateTaskReq {
     /// where coursework prefers 120).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ideal_chunk_min: Option<u32>,
+    /// Place as early as the window allows (`Task::asap`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asap: Option<bool>,
+    /// In term, lean slightly towards weekends (`Task::term_weekend_bias`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub term_weekend_bias: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]

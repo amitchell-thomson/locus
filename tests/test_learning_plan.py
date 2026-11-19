@@ -184,3 +184,20 @@ def test_a_snapshot_from_before_a_column_restores_by_name(tmp_path):
     c = hdb.connect(tmp_path / "h.db")
     g = L.get_goal(c, "quast")
     assert (g.thing, g.notes, g.area) == ("quast", "little and often", None)
+
+
+def test_a_goal_in_rounds_is_walked_in_order_not_side_by_side(conn):
+    """19 Nov, cpp-oxdaq: each round needs the one before, so its second round starts only
+    when the first's hours are spent; a tree goal's sections start together."""
+    ids = _goal(conn)
+    side = LP.plan_preview(conn, "interview-prep", today=D)
+    assert {w.title: w.start for w in side}["r^2 = R^2"] == D      # its own lane, from day one
+    L.set_shape(conn, "interview-prep", "rounds")
+    ws = {w.title: w for w in LP.plan_preview(conn, "interview-prep", today=D)}
+    assert ws["EV"].start == D and ws["Markov"].start == date(2026, 11, 19)
+    assert ws["r^2 = R^2"].start == date(2026, 11, 26)              # after all ten hours of the first
+    k = FakeKairos()
+    LP.approve(conn, "interview-prep", kairos=k, today=D)
+    assert [b["earliest_start"] for _, p, b, _ in k.calls if p == "/api/tasks"] == \
+        ["2026-11-16", "2026-11-19", "2026-11-26"]
+    assert ids

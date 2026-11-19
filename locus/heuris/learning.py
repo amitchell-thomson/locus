@@ -87,6 +87,9 @@ def ensure(conn: sqlite3.Connection) -> None:
     # `season` likewise (16 Nov: "less time during term ... higher during holidays").
     if "season" not in {r[1] for r in conn.execute("PRAGMA table_info(pace)")}:
         conn.execute("ALTER TABLE pace ADD COLUMN season TEXT")
+    # `shape` (19 Nov): cpp-oxdaq is built in rounds, each needing the one before.
+    if "shape" not in {r[1] for r in conn.execute("PRAGMA table_info(goals)")}:
+        conn.execute("ALTER TABLE goals ADD COLUMN shape TEXT")
 
 
 # --- term and vacation ---------------------------------------------------------------------------
@@ -147,6 +150,7 @@ class Goal:
     pace: float | None = None        # hours a week now
     pace_until: str | None = None    # when the current pace ends, if it does
     seasons: dict | None = None      # {"term": 3.0, "vacation": 7.0} from today on
+    shape: str | None = None         # None or "tree": sections interleave; "rounds": in order
 
 
 def add_goal(conn: sqlite3.Connection, gid: str, title: str, *, master_by: str | date | None = None,
@@ -184,6 +188,23 @@ def set_area(conn: sqlite3.Connection, gid: str, area: str) -> Goal:
     get_goal(conn, gid)
     with conn:
         conn.execute("UPDATE goals SET area=?, changed=? WHERE id=?", (area, _now(), gid))
+    return get_goal(conn, gid)
+
+
+# How a goal's curriculum is shaped and walked (19 Nov). A **tree** (the default, G1): sections
+# run side by side, so every week holds some of each (16 Nov: "definitely interleave"). **Rounds**
+# (G2): the curriculum follows a rounds plan he made (cpp-oxdaq/ROUNDS.md), each round a few
+# concepts then a part built with them and depending on the rounds before, so the rounds are kept
+# in his order and walked one after another. Other goals still interleave with it in the calendar.
+SHAPES = ("tree", "rounds")
+
+
+def set_shape(conn: sqlite3.Connection, gid: str, shape: str) -> Goal:
+    if shape not in SHAPES:
+        raise LearningError(f"shape is one of {', '.join(SHAPES)}")
+    get_goal(conn, gid)
+    with conn:
+        conn.execute("UPDATE goals SET shape=?, changed=? WHERE id=?", (shape, _now(), gid))
     return get_goal(conn, gid)
 
 
@@ -274,12 +295,13 @@ def pace_history(conn: sqlite3.Connection, gid: str) -> list[tuple]:
 
 def get_goal(conn: sqlite3.Connection, gid: str) -> Goal:
     ensure(conn)
-    r = conn.execute("SELECT id, title, master_by, state, priority, thing, notes, area FROM goals WHERE id=?",
-                     (gid,)).fetchone()
+    r = conn.execute("SELECT id, title, master_by, state, priority, thing, notes, area, shape FROM goals "
+                     "WHERE id=?", (gid,)).fetchone()
     if not r:
         known = [x[0] for x in conn.execute("SELECT id FROM goals ORDER BY priority, id")]
         raise LearningError(f"no goal {gid!r}" + (f"; goals: {', '.join(known)}" if known else ""))
-    g = Goal(*r)
+    g = Goal(*r[:8])
+    g.shape = r[8]
     p = current_pace(conn, gid)
     if p:
         g.pace, g.pace_until = p
@@ -308,4 +330,5 @@ def pace_words(g: Goal) -> str:
 def describe(g: Goal) -> str:
     pace = pace_words(g)
     by = f"by {g.master_by}" if g.master_by else "no hard date"
-    return f"{g.id}  [{g.state}, priority {g.priority}]  {g.title}  ({by}; {pace})"
+    rounds = "; in rounds" if g.shape == "rounds" else ""
+    return f"{g.id}  [{g.state}, priority {g.priority}]  {g.title}  ({by}; {pace}{rounds})"

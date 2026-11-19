@@ -390,6 +390,8 @@ def cmd_learn(args) -> None:
                 print(f"Now: {L.describe(L.set_state(conn, args.goal, args.value))}")
             elif a == "area":
                 print(f"Now: {L.describe(L.set_area(conn, args.goal, args.value or ''))}")
+            elif a == "shape":
+                print(f"Now: {L.describe(L.set_shape(conn, args.goal, args.value or ''))}")
             elif a == "plan":
                 for w in LP.plan_preview(conn, args.goal):
                     print(f"{w.start} to {w.due}  {w.hours:4g} h  {w.title}")
@@ -1699,11 +1701,12 @@ def main(argv=None) -> None:
 
     ple = sub.add_parser("learn", help="spec L: learning goals and their pace (hours a week)")
     ple.add_argument("action", choices=["list", "show", "add", "pace", "state", "note", "propose", "curriculum", "export",
-                                         "area", "plan", "approve", "reject"])
+                                         "area", "shape", "plan", "approve", "reject"])
     ple.add_argument("--evidence", nargs="*", help="propose: pointers it must use (src:623, fact:196)")
     ple.add_argument("--query", action="append", help="propose: what to search for, instead of the default")
     ple.add_argument("goal", nargs="?", help="a goal id: interview-prep, cpp-oxdaq, quast")
-    ple.add_argument("value", nargs="?", help="pace: hours a week; state: proposed, active, paused, done, archived")
+    ple.add_argument("value", nargs="?", help="pace: hours a week; state: proposed, active, paused, done, archived; "
+                                                     "shape: tree (sections interleave) or rounds (in order)")
     ple.add_argument("--title", help="add: the goal in words")
     ple.add_argument("--by", help="add: master-by date YYYY-MM-DD")
     ple.add_argument("--priority", type=int, default=2, help="add: 1 highest")

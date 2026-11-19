@@ -13,6 +13,9 @@ holds some probability, some coding, some statistics, and every lane ends togeth
 order, all of probability came before any coding (seven weeks). Other goals are lanes of their
 own at their own pace, so their tasks interleave in the calendar the same way.
 
+**A goal in rounds is walked in order** (19 Nov, cpp-oxdaq): its rounds each need the one
+before, so its leaves are one lane (`spread`); its concepts still come just before their build.
+
 **The pace follows term and vacation** (16 Nov: "less time during term ... higher during
 holidays"): the pace on each day is that day's season's (`learning.current_pace`), so a window
 that crosses into the vacation shortens by itself.
@@ -124,6 +127,14 @@ def lanes(leaves: list[tuple[int, str, float]], root_of: dict[int, int], pace_on
     return sorted(out, key=lambda w: (w.start, order[w.topic]))
 
 
+def spread(conn: sqlite3.Connection, g: L.Goal, items: list[tuple[int, str, float]], start: date) -> list[Window]:
+    """The goal's windows: a tree's sections side by side, a goal in rounds walked in order (its
+    rounds depend on the ones before, so R2 never starts before R1's hours are spent)."""
+    if g.shape == "rounds":
+        return windows(items, L.pace_fn(conn, g.id), start)
+    return lanes(items, _roots(conn, g.id), L.pace_fn(conn, g.id), start)
+
+
 def _roots(conn: sqlite3.Connection, gid: str) -> dict[int, int]:
     parent = dict(conn.execute("SELECT id, parent FROM topics WHERE goal=?", (gid,)).fetchall())
     out = {}
@@ -180,7 +191,7 @@ def plan_preview(conn: sqlite3.Connection, gid: str, *, today: date | None = Non
     g = L.get_goal(conn, gid)
     state = "proposed" if _leaves(conn, gid, "proposed") else "current"
     items = [(t, title, h) for t, title, h, _ in _leaves(conn, g.id, state)]
-    return lanes(items, _roots(conn, gid), L.pace_fn(conn, gid), today or date.today())
+    return spread(conn, g, items, today or date.today())
 
 
 def approve(conn: sqlite3.Connection, gid: str, *, kairos: Kairos, today: date | None = None) -> Approved:
@@ -199,8 +210,7 @@ def approve(conn: sqlite3.Connection, gid: str, *, kairos: Kairos, today: date |
     if g.state != "active":
         g = L.set_state(conn, gid, "active")
     have = {r[0] for r in conn.execute("SELECT topic FROM goal_tasks WHERE goal=?", (gid,))}
-    ws = lanes([(t, title, h) for t, title, h, _ in leaves], _roots(conn, gid), L.pace_fn(conn, gid),
-               today or date.today())
+    ws = spread(conn, g, [(t, title, h) for t, title, h, _ in leaves], today or date.today())
     why = {t: w for t, _, _, w in leaves}
     created: list[tuple[Window, str]] = []
     for w in ws:
@@ -248,7 +258,7 @@ def respread(conn: sqlite3.Connection, gid: str, *, kairos: Kairos, today: date 
             continue
         items.append((topic, title, t["remaining_min"] / 60))
         ids[topic] = task_id
-    ws = lanes(items, _roots(conn, gid), L.pace_fn(conn, gid), today or date.today())
+    ws = spread(conn, L.get_goal(conn, gid), items, today or date.today())
     for w in ws:
         kairos("PATCH", f"/api/tasks/{ids[w.topic]}",
                {"earliest_start": w.start.isoformat(), "due": w.due.isoformat(), "plan": False}, author="alec")

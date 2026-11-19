@@ -29,8 +29,11 @@ from pydantic import BaseModel, Field
 from locus.heuris import learning as L
 
 MODEL = "opus"
-MAX_EVIDENCE_CHARS = 60_000
+MAX_EVIDENCE_CHARS = 90_000
 PER_ITEM_CHARS = 4_000
+# A pointer he NAMES is read whole up to this (19 Nov): at 4,000 characters cpp-oxdaq's ROUNDS.md
+# was cut off at its second round, and the spec documents its rounds point to are ~20,000.
+NAMED_ITEM_CHARS = 24_000
 
 CURRICULA_SCHEMA = """
 CREATE TABLE IF NOT EXISTS curricula (
@@ -58,6 +61,16 @@ Rules:
 - Order topics as he should meet them: prerequisites first, weakest early.
 - "summary" says in two or three sentences what the curriculum emphasises and why, from the evidence.
 - Plain British English, no em dashes."""
+
+
+ROUNDS_RULES = """
+
+This goal is built in ROUNDS. The evidence includes his rounds plan: a table of rounds in build order, each with the concepts it teaches, the part it builds, its hours and when it is done. That plan is the backbone and overrides the 4 to 8 rule above:
+- One top-level topic per round that has hours, in the plan's order, titled "<id>: <the part it builds>" (for example "R5: price levels and the book side"). Leave out rounds with no hours (a later phase). Its hours equal the round's hours in the plan.
+- Under each round, 2 to 6 subtopics in the order he meets them. First the concepts the round names, grouped into topics of 1 to 4 hours that one or a few sessions can teach and practise; each title says exactly what is learnt, and "why" names the part of the build that needs it. Then the build itself, in steps of 2 to 5 hours that follow the spec documents (what to write, in what order, ending at the round's "done when"). A round with no concepts in one language has no concept topics for it.
+- Spread a round's hours honestly between concepts and build for what that round asks: a round heavy in new C++ ideas spends more on concepts, a round that applies known ideas spends more on the build.
+- Ground concept topics in the plan's row (quote the concepts cell) and build steps in the spec documents where they describe that part, or the plan's row.
+- Tracks: cpp-<subject> for C++ concepts (cpp-compilation-model, cpp-memory-ownership, cpp-containers, cpp-templates, cpp-performance), python-<subject> for Python (python-data-model, python-asyncio, python-testing, python-numpy, python-concurrency), oxdaq-build for build steps."""
 
 
 class _Evidence(BaseModel):
@@ -105,12 +118,12 @@ def ensure(conn: sqlite3.Connection) -> None:
 
 # --- 1. evidence --------------------------------------------------------------------------------
 
-def _item(conn: sqlite3.Connection, ref: str) -> list[Piece]:
+def _item(conn: sqlite3.Connection, ref: str, cap: int = PER_ITEM_CHARS) -> list[Piece]:
     """A pointer's text from the index: one item, or every section of a library document."""
     rows = conn.execute("SELECT ref, title, text FROM items WHERE ref=?", (ref,)).fetchall()
     if not rows and ref.startswith("src:") and "#" not in ref:
         rows = conn.execute("SELECT ref, title, text FROM items WHERE parent=? ORDER BY ref", (ref,)).fetchall()
-    return [Piece(r[0], r[1] or r[0], (r[2] or "")[:PER_ITEM_CHARS]) for r in rows]
+    return [Piece(r[0], r[1] or r[0], (r[2] or "")[:cap]) for r in rows]
 
 
 def _search(conn: sqlite3.Connection, query: str, *, kinds=("note", "file", "doc", "source"), k: int = 6,
@@ -153,7 +166,7 @@ def gather(conn: sqlite3.Connection, goal: L.Goal, *, refs: list[str] = (), quer
                 out.append(p)
 
     for r in refs:
-        add(_item(conn, r))
+        add(_item(conn, r, NAMED_ITEM_CHARS))
     qs = list(queries) or [goal.title, f"feedback and weaknesses for {goal.title}", f"prep plan for {goal.title}"]
     for q in qs:
         for r in _search(conn, q, embed=embed, rerank=rerank):
@@ -165,10 +178,12 @@ def gather(conn: sqlite3.Connection, goal: L.Goal, *, refs: list[str] = (), quer
     for f in F.current(conn, "me"):
         if f.slot.split(":")[0] in ("goal", "education", "decision", "plan", "preference", "constraint", "experience"):
             add([Piece(f"fact:{f.id}", f"me · {f.slot}", f.value)])
+    # Over the cap a piece is skipped, not the rest: the facts about him come last and are short,
+    # and a long search hit must not push them out.
     total, kept = 0, []
     for p in out:
         if total + len(p.text) > MAX_EVIDENCE_CHARS:
-            break
+            continue
         kept.append(p)
         total += len(p.text)
     return kept
@@ -213,7 +228,7 @@ def propose(conn: sqlite3.Connection, gid: str, *, refs: list[str] = (), queries
     if ask is None:
         def ask(system: str, user: str) -> str:
             return claude.ask(user, system=system, model=MODEL, thinking=True).text
-    raw = ask(SYSTEM, user_prompt(goal, pieces, today))
+    raw = ask(SYSTEM + (ROUNDS_RULES if goal.shape == "rounds" else ""), user_prompt(goal, pieces, today))
     try:
         cur = _Curriculum.model_validate_json(_extract_json(raw))
     except Exception as e:  # noqa: BLE001

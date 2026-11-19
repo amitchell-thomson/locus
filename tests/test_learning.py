@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 
 import pytest
 
@@ -172,3 +172,31 @@ def test_the_learning_screen_reads_the_curriculum_depth_first(conn):
     assert g["syllabus"][1]["quote"] == "Areas for growth - programming" and out["tracks"][0]["id"] == "data-structures"
     # the shape the Rust contract accepts (deny_unknown_fields): checked by the TUI's own test
     assert set(g) <= {"id", "title", "by", "state", "syllabus", "pace", "summary"}
+
+
+def test_a_goal_in_rounds_reads_the_whole_plan_and_is_told_to_keep_it(conn):
+    """19 Nov: cpp-oxdaq's ROUNDS.md was cut at its second round by the 4,000 character cap, and
+    the generic prompt rebuilt it as 4 to 8 sections of its own."""
+    from locus.heuris import curriculum as C
+    from locus.heuris.index import Item, index
+
+    embed = _seed(conn)
+    rounds = "| R1 | reference book |" + " filler" * 1200 + " | R13 | engine v2, cache hierarchy |"
+    index(conn, "repos", [Item(ref="doc:learning/cpp-oxdaq/ROUNDS.md", kind="doc", at=datetime(2026, 11, 19, tzinfo=timezone.utc),
+                               title="OXDAQ build rounds", text=rounds, thing="learning")], embed=embed)
+    L.add_goal(conn, "cpp-oxdaq", "C++ alongside OXDAQ", priority=1)
+    with pytest.raises(L.LearningError, match="shape is one of"):
+        L.set_shape(conn, "cpp-oxdaq", "spiral")
+    assert "in rounds" in L.describe(L.set_shape(conn, "cpp-oxdaq", "rounds"))
+    seen = {}
+
+    def ask(system, user):
+        seen.update(system=system, user=user)
+        return '{"summary": "s", "topics": [{"key": "r13", "track": "cpp-performance", "title": "R13: engine v2",' \
+               ' "hours": 12, "weight": 2, "why": "w", "evidence": [{"ref": "doc:learning/cpp-oxdaq/ROUNDS.md",' \
+               ' "quote": "engine v2, cache hierarchy"}]}]}'
+
+    p = C.propose(conn, "cpp-oxdaq", refs=["doc:learning/cpp-oxdaq/ROUNDS.md"], queries=["c++"], ask=ask,
+                  embed=embed, rerank=lambda q, hits: hits, today=date(2026, 11, 19))
+    assert "cache hierarchy" in seen["user"]                   # the last round reached the prompt
+    assert "ROUNDS" in seen["system"] and p.kept == 1          # and its quote held

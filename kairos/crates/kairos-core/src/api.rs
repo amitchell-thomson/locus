@@ -311,6 +311,10 @@ pub struct DeadlineReq {
 pub struct PlanReq {
     #[serde(default)]
     pub dry_run: bool,
+    /// Tasks whose unpinned future blocks are planned afresh, not kept (19 Nov: a learning
+    /// goal's pace change re-spreads its windows, and blocks that still fit stayed put).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub replan: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

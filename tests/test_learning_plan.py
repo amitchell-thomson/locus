@@ -204,7 +204,7 @@ def test_a_goal_in_rounds_is_walked_in_order_not_side_by_side(conn):
     # each follows the one before it, whatever its section; sessions prefer 45 to 90 min
     assert [b.get("after") for b in made] == [None, "t1", "t2"]
     assert all(b["ideal_chunk_min"] == 45 and b["max_chunk_min"] == 90 for b in made)
-    assert all(b["asap"] and b["term_weekend_bias"] for b in made)
+    assert all(b["asap"] and b["term_weekend_bias"] for b in made)       # in rounds: asap
     assert ids
 
 
@@ -216,11 +216,14 @@ def test_a_tree_goal_chains_topics_within_each_section_only(conn):
     tid = {b["title"]: t for t, b in k.tasks.items()}
     assert made["Markov"]["after"] == tid["EV"]
     assert "after" not in made["EV"] and "after" not in made["r^2 = R^2"]     # sections start together
+    assert all(not b["asap"] and b["term_weekend_bias"] for b in made.values())   # a tree spreads
     # a re-spread keeps the chain and the session sizes on what is still open
     k.tasks[tid["EV"]]["status"] = "done"
     LP.respread(conn, "interview-prep", kairos=k, today=D)
     patches = {path.rsplit("/", 1)[-1]: b for m, path, b, _ in k.calls if m == "PATCH"}
     assert patches[tid["Markov"]]["after"] == "" and patches[tid["Markov"]]["ideal_chunk_min"] == 45
+    plans = [b for m, path, b, _ in k.calls if path == "/api/plan"]
+    assert set(plans[-1]["replan"]) == {tid["Markov"], tid["r^2 = R^2"]}       # open ones, afresh
 
 
 def test_days_away_carry_no_pace(conn, monkeypatch):

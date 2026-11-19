@@ -3976,6 +3976,11 @@ impl Engine {
 
     /// Run the scheduler; unless `dry_run`, propose the resulting changeset.
     pub fn plan(&mut self, dry_run: bool, author: Author) -> Result<api::PlanResp> {
+        self.plan_replanning(dry_run, author, &[])
+    }
+
+    /// `plan`, with `replan`'s tasks planned afresh rather than their blocks kept.
+    pub fn plan_replanning(&mut self, dry_run: bool, author: Author, replan: &[String]) -> Result<api::PlanResp> {
         if !dry_run {
             self.settle()?;
             self.follow_before()?;
@@ -4091,6 +4096,7 @@ impl Engine {
             busy: &busy,
             existing: &existing,
             unavailable: &skips,
+            replan,
             reflow_after,
         };
         let p = sched::plan(&input);

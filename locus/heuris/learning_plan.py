@@ -37,9 +37,12 @@ section) and kairos plans it only after that task's blocks.
 **Work goes at the front of its window** (19 Nov: "less in term and more in holidays
 reflected"): kairos spread each topic towards its due date, and with each topic waiting for the
 one before, work slid out of the vacations into term (Hilary ran at 11 h a week of 9, the
-vacations at 13 of 16). The window comes from the pace, so each task is `asap`; in term it leans
-slightly to weekends (`term_weekend_bias`: "weekends in oxford are usually less busy"). Days he
-is away (kairos's `away` profile) carry no pace.
+vacations at 13 of 16). A goal in rounds is one lane at the full pace, so its windows are short
+and each task is `asap`. A tree's sections each get a share of the pace, so a topic's window is
+weeks long and spreading across it IS the pace: asap there put every section's first topic in
+the same week (21 h, measured 19 Nov), so a tree spreads. Both lean slightly to weekends in term
+(`term_weekend_bias`: "weekends in oxford are usually less busy"). Days he is away (kairos's
+`away` profile) carry no pace.
 
 **A pace change re-spreads** (L-D7: "easy to change if I want to ramp up or down"): the goal's
 open tasks are walked again from today with what is LEFT of each (kairos's `remaining_min`), and
@@ -252,7 +255,7 @@ def approve(conn: sqlite3.Connection, gid: str, *, kairos: Kairos, today: date |
                 "earliest_start": w.start.isoformat(), "due": w.due.isoformat(),
                 "soft_due": True, "create_deadline": False, "plan": False,
                 "min_chunk_min": SESSION_MIN, "max_chunk_min": SESSION_MAX, "ideal_chunk_min": SESSION_MIN,
-                "asap": True, "term_weekend_bias": True,
+                "asap": g.shape == "rounds", "term_weekend_bias": True,
                 "notes": f"Learning goal {gid} ({g.title}), topic {w.topic}. {why.get(w.topic, '')}\n"
                          f"Sheets and code: ~/files/Learning/{gid}/"}
         if g.thing:
@@ -305,9 +308,11 @@ def respread(conn: sqlite3.Connection, gid: str, *, kairos: Kairos, today: date 
                {"earliest_start": w.start.isoformat(), "due": w.due.isoformat(), "plan": False,
                 "after": ids[lead] if lead is not None else "",
                 "min_chunk_min": SESSION_MIN, "max_chunk_min": SESSION_MAX, "ideal_chunk_min": SESSION_MIN,
-                "asap": True, "term_weekend_bias": True},
+                "asap": g.shape == "rounds", "term_weekend_bias": True},
                author="alec")
-    p = kairos("POST", "/api/plan", {"dry_run": False}, author="alec") if ws else None
+    # Its blocks are placed afresh: kept, the ones that still fit would stay where the old
+    # windows put them (19 Nov).
+    p = kairos("POST", "/api/plan", {"dry_run": False, "replan": list(ids.values())}, author="alec") if ws else None
     return len(ws), (p or {}).get("summary", "")
 
 

@@ -146,6 +146,8 @@ pub struct PlanInput<'a> {
     /// Times Alec skipped (deleted a work block there): no work, but not an
     /// event either (no buffers, no load, not "back-to-back").
     pub unavailable: &'a [(DateTime<Utc>, DateTime<Utc>)],
+    /// Tasks planned afresh: their unpinned blocks are not kept (`PlanReq::replan`).
+    pub replan: &'a [String],
     /// Time was freed (an event deleted, shortened or moved away): blocks
     /// from this time on re-flow into the best layout (pinned ones stay).
     pub reflow_after: Option<DateTime<Utc>>,
@@ -631,6 +633,17 @@ fn find_chunk(g: &Grid<'_>, st: &State, n: &Need<'_>, remaining: usize, tier: Ti
             e.1 += (b - a) as i64;
         }
     }
+    // With `term_weekend_bias`, a term weekday's free time counts three quarters when the work
+    // is shared out, so a little more of it lands on the weekends (19 Nov: a slight lean only).
+    if t.term_weekend_bias && !t.asap {
+        for (d, v) in days.iter_mut() {
+            let term = g.c.profile_for(*d).is_some_and(|p| p.name == "term");
+            let weekday = !matches!(d.weekday(), chrono::Weekday::Sat | chrono::Weekday::Sun);
+            if term && weekday {
+                v.0 = v.0 * 3 / 4;
+            }
+        }
+    }
     let total_free: i64 = days.values().map(|v| v.0).sum();
     if total_free == 0 {
         return None;
@@ -816,6 +829,7 @@ fn run(input: &PlanInput<'_>, g: &Grid<'_>, horizon_idx: usize, keep_existing: b
             && aligned
             && deadline_ok
             && !asap
+            && !input.replan.contains(&b.task_id)
             && st.can_place(g, &b.task_id, i, len, false)
         {
             st.place(g, &b.task_id, i, len);

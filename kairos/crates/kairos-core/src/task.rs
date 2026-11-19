@@ -127,7 +127,8 @@ pub struct Task {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub asap: bool,
     /// In term, a slight lean towards weekends (19 Nov: "weekends in oxford are usually less
-    /// busy"): a Thursday or Friday gives way to the weekend after it; earlier weekdays don't.
+    /// busy"). Asap: a Thursday or Friday gives way to the weekend after it, earlier weekdays
+    /// don't. Spread: a term weekday's free time counts three quarters in the sharing out.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub term_weekend_bias: bool,
     pub created_by: Author,

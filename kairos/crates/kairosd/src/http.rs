@@ -478,8 +478,13 @@ async fn create_deadline(
 }
 
 async fn plan(State(st): State<AppState>, body: Option<Json<api::PlanReq>>) -> HResult<api::PlanResp> {
-    let dry = body.is_some_and(|b| b.0.dry_run);
-    Ok(Json(with_engine(&st, move |e| e.plan(dry, Author::Scheduler)).await?))
+    let req = body.map(|b| b.0).unwrap_or_default();
+    Ok(Json(
+        with_engine(&st, move |e| {
+            e.plan_replanning(req.dry_run, Author::Scheduler, &req.replan)
+        })
+        .await?,
+    ))
 }
 
 // ---------------------------------------------------------------- projects

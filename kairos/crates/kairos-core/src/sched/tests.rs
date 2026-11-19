@@ -65,6 +65,7 @@ fn run_plan(now: &str, tasks: &[Task], busy: &[Busy], existing: &[Block]) -> Pla
         busy,
         existing,
         unavailable: &[],
+        replan: &[],
         reflow_after: None,
     })
 }
@@ -538,6 +539,7 @@ fn freed_time_reflows_work_into_the_gap() {
         busy: &lectures(),
         existing: &existing,
         unavailable: &[],
+        replan: &[],
         reflow_after: Some(at("2026-10-12 10:00")),
     });
     assert!(tue(&p) >= 1, "work moves into the freed Tuesday: {p:#?}");
@@ -945,6 +947,7 @@ fn weekends_start_at_ten() {
         busy: &[],
         existing: &[],
         unavailable: &[],
+        replan: &[],
         reflow_after: None,
     };
     let p = plan(&input);
@@ -1205,4 +1208,68 @@ fn in_term_a_weekend_bias_moves_late_week_work_to_the_weekend_only() {
     t.term_weekend_bias = true;
     assert_eq!(first("2026-10-15 08:00", &t), "Sat");
     assert_eq!(first("2026-10-12 08:00", &t), "Mon");
+}
+
+/// Spread work with `term_weekend_bias` puts more of itself on term weekends than without.
+#[test]
+fn spread_work_with_the_weekend_bias_leans_to_term_weekends() {
+    let mut t = task("topic", 600, Some("2026-10-30 17:00"));
+    t.min_chunk_min = 45;
+    t.max_chunk_min = 90;
+    t.ideal_chunk_min = 45;
+    let weekend = |p: &Plan| {
+        p.create
+            .iter()
+            .filter(|b| {
+                matches!(
+                    b.start.with_timezone(&London).weekday(),
+                    chrono::Weekday::Sat | chrono::Weekday::Sun
+                )
+            })
+            .map(Block::minutes)
+            .sum::<i64>()
+    };
+    let plain = run_plan("2026-10-12 08:00", std::slice::from_ref(&t), &lectures(), &[]);
+    t.term_weekend_bias = true;
+    let lean = run_plan("2026-10-12 08:00", std::slice::from_ref(&t), &lectures(), &[]);
+    assert_eq!(total(&lean, "topic"), 600);
+    assert!(
+        weekend(&lean) > weekend(&plain),
+        "{} vs {}",
+        weekend(&lean),
+        weekend(&plain)
+    );
+}
+
+/// `replan` (19 Nov): a task named there has its blocks planned afresh; otherwise blocks that
+/// still fit stay, wherever an earlier plan put them.
+#[test]
+fn a_task_named_for_replanning_is_not_held_to_its_old_blocks() {
+    let t = task("topic", 180, Some("2026-10-23 17:00"));
+    let cram = vec![Block {
+        uid: Some("old".into()),
+        task_id: "topic".into(),
+        start: at("2026-10-22 09:00"),
+        end: at("2026-10-22 12:00"),
+        pinned: false,
+        why: None,
+    }];
+    let c = constraints();
+    let run = |replan: &[String]| {
+        plan(&PlanInput {
+            now: at("2026-10-12 08:00"),
+            tz: London,
+            constraints: &c,
+            tasks: std::slice::from_ref(&t),
+            busy: &[],
+            existing: &cram,
+            unavailable: &[],
+            replan,
+            reflow_after: None,
+        })
+    };
+    assert!(run(&[]).keep.iter().any(|b| b.uid.as_deref() == Some("old")));
+    let fresh = run(&["topic".to_string()]);
+    assert!(fresh.delete.iter().any(|b| b.uid.as_deref() == Some("old")));
+    assert_eq!(total(&fresh, "topic"), 180);
 }

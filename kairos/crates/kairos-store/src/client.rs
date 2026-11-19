@@ -264,7 +264,13 @@ impl Daemon {
         self.post("/api/deadlines", r)
     }
     pub fn plan(&self, dry_run: bool) -> Result<std::result::Result<api::PlanResp, Rejected>> {
-        self.post("/api/plan", &api::PlanReq { dry_run })
+        self.post(
+            "/api/plan",
+            &api::PlanReq {
+                dry_run,
+                replan: Vec::new(),
+            },
+        )
     }
     /// Log work done outside a block (a done block ending now).
     pub fn log_work(&self, id: &str, minutes: u32) -> Result<std::result::Result<api::TaskResp, Rejected>> {

@@ -100,7 +100,7 @@ def _backup_db(src_db: Path, dest_db: Path) -> tuple[int, int]:
 
 
 # Learning state is not derived either (spec L, L-D8): goals, topics, their evidence, the pace.
-LEDGER_TABLES = ("facts", "fact_log", "records", "briefs", "goals", "topics", "topic_evidence", "pace", "curricula", "goal_tasks")
+LEDGER_TABLES = ("facts", "fact_log", "records", "briefs", "goals", "topics", "topic_evidence", "pace", "curricula", "goal_tasks", "goal_sync")
 
 
 def restore_ledger(snapshot: Path, heuris_db: Path) -> dict[str, int]:

@@ -390,6 +390,9 @@ def cmd_learn(args) -> None:
                 print(f"Now: {L.describe(L.set_state(conn, args.goal, args.value))}")
             elif a == "area":
                 print(f"Now: {L.describe(L.set_area(conn, args.goal, args.value or ''))}")
+            elif a == "sync":
+                for gid, what in LP.sync(conn, kairos=_kairos).items():
+                    print(f"{gid}: {what}")
             elif a == "respread":
                 n, summary = LP.respread(conn, args.goal, kairos=_kairos)
                 print(f"Re-spread {n} open task(s). {summary}")
@@ -1704,7 +1707,7 @@ def main(argv=None) -> None:
 
     ple = sub.add_parser("learn", help="spec L: learning goals and their pace (hours a week)")
     ple.add_argument("action", choices=["list", "show", "add", "pace", "state", "note", "propose", "curriculum", "export",
-                                         "area", "shape", "plan", "approve", "reject", "respread"])
+                                         "area", "shape", "plan", "approve", "reject", "respread", "sync"])
     ple.add_argument("--evidence", nargs="*", help="propose: pointers it must use (src:623, fact:196)")
     ple.add_argument("--query", action="append", help="propose: what to search for, instead of the default")
     ple.add_argument("goal", nargs="?", help="a goal id: interview-prep, cpp-oxdaq, quast")

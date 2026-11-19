@@ -71,6 +71,11 @@ CREATE TABLE IF NOT EXISTS goal_tasks (
     created  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS goal_tasks_goal ON goal_tasks(goal);
+CREATE TABLE IF NOT EXISTS goal_sync (
+    goal    TEXT PRIMARY KEY REFERENCES goals(id),
+    digest  TEXT NOT NULL,                 -- its tasks' (id, status, remaining) when last spread
+    at      TEXT NOT NULL
+);
 """
 MIN_WINDOW_DAYS = 7
 # A session is 45 to 90 minutes (17 Nov): kairos plans a 3 h task as coursework, in 2 to 3 h
@@ -319,3 +324,44 @@ def respread(conn: sqlite3.Connection, gid: str, *, kairos: Kairos, today: date 
 def tasks_of(conn: sqlite3.Connection, gid: str) -> dict[int, str]:
     ensure(conn)
     return dict(conn.execute("SELECT topic, task_id FROM goal_tasks WHERE goal=?", (gid,)).fetchall())
+
+
+def sync(conn: sqlite3.Connection, *, kairos: Kairos, today: date | None = None) -> dict[str, str]:
+    """Re-spread every active goal whose tasks changed since it was last spread (19 Nov: "I want
+    certain things to be updateable as we find that I know one section well, and one less well").
+    A session that ends "done early" or "needs another hour" changes a task's status or
+    remaining time in kairos; this walks the pace again from today, so the topics after it move
+    up or back. Unchanged goals are left alone: a re-spread every tick would move blocks daily.
+    Run after each index tick (locus-heuris.service). Returns {goal: what happened}."""
+    import hashlib
+    import json
+
+    ensure(conn)
+    out: dict[str, str] = {}
+    for g in L.goals(conn):
+        if g.state != "active":
+            continue
+        tids = [r[0] for r in conn.execute("SELECT task_id FROM goal_tasks WHERE goal=? ORDER BY task_id", (g.id,))]
+        if not tids:
+            continue
+        def digest_now() -> str:
+            state = [(tid, (t := kairos("GET", f"/api/tasks/{tid}")).get("status"), t.get("remaining_min"))
+                     for tid in tids]
+            return hashlib.sha256(json.dumps(state).encode()).hexdigest()
+
+        digest = digest_now()
+        old = conn.execute("SELECT digest FROM goal_sync WHERE goal=?", (g.id,)).fetchone()
+        if old and old[0] == digest:
+            out[g.id] = "unchanged"
+            continue
+        if old:      # the first sight of a goal only records where it stands
+            n, summary = respread(conn, g.id, kairos=kairos, today=today)
+            out[g.id] = f"re-spread {n} open task(s). {summary.splitlines()[0] if summary else ''}".strip()
+            digest = digest_now()
+        else:
+            out[g.id] = "recorded"
+        with conn:
+            conn.execute("INSERT INTO goal_sync(goal, digest, at) VALUES (?,?,?) ON CONFLICT(goal) DO UPDATE "
+                         "SET digest=excluded.digest, at=excluded.at",
+                         (g.id, digest, datetime.now(timezone.utc).isoformat(timespec="seconds")))
+    return out

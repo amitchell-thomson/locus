@@ -260,3 +260,20 @@ def test_topics_he_asks_for_join_the_current_curriculum_grounded_all_or_nothing(
     k = FakeKairos()
     LP.approve(conn, "interview-prep", kairos=k, today=D)
     assert len(k.tasks) == 4 and new[0] in LP.tasks_of(conn, "interview-prep")
+
+
+def test_a_finished_or_extended_topic_re_spreads_its_goal_once(conn):
+    """19 Nov: "updateable as we find that I know one section well, and one less well"."""
+    _goal(conn)
+    k = FakeKairos()
+    LP.approve(conn, "interview-prep", kairos=k, today=D)
+    assert LP.sync(conn, kairos=k, today=D) == {"interview-prep": "recorded"}
+    assert LP.sync(conn, kairos=k, today=D) == {"interview-prep": "unchanged"}
+    patches = lambda: sum(1 for m, *_ in k.calls if m == "PATCH")   # noqa: E731
+    before = patches()
+    k.tasks["t1"]["status"] = "done"                   # EV known well: finished in one session
+    assert LP.sync(conn, kairos=k, today=D)["interview-prep"].startswith("re-spread 2")
+    assert patches() == before + 2
+    assert LP.sync(conn, kairos=k, today=D) == {"interview-prep": "unchanged"}
+    k.tasks["t2"]["remaining_min"] += 120             # Markov needs another two hours
+    assert LP.sync(conn, kairos=k, today=D)["interview-prep"].startswith("re-spread")

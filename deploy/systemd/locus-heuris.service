@@ -12,6 +12,9 @@ Environment=PATH=/home/alec/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:
 # Free: embedding runs on the local GPU (nomic via Ollama); no model call is made. Incremental by
 # content hash, so an unchanged tick embeds nothing.
 ExecStart=/home/alec/.local/bin/uv run locus heuris index all
+# A learning task finished early or given more time in a session re-spreads its goal (19 Nov).
+# Leading "-": a kairos hiccup here never fails the index.
+ExecStartPost=-/home/alec/.local/bin/uv run locus learn sync
 TimeoutStartSec=3600
 Nice=10
 IOSchedulingClass=idle

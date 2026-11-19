@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 from locus.heuris import learning as L
 
 MODEL = "opus"
+MAX_TOKENS = 32_000
 MAX_EVIDENCE_CHARS = 90_000
 PER_ITEM_CHARS = 4_000
 # A pointer he NAMES is read whole up to this (19 Nov): at 4,000 characters cpp-oxdaq's ROUNDS.md
@@ -227,7 +228,9 @@ def propose(conn: sqlite3.Connection, gid: str, *, refs: list[str] = (), queries
         raise L.LearningError(f"no evidence found for {gid!r}: name some with --evidence")
     if ask is None:
         def ask(system: str, user: str) -> str:
-            return claude.ask(user, system=system, model=MODEL, thinking=True).text
+            # A goal in rounds is ~13 sections of 2 to 6 topics, each with a quote: at the default
+            # 16,000 (thinking included) the first cpp-oxdaq reply was cut mid-list (19 Nov).
+            return claude.ask(user, system=system, model=MODEL, thinking=True, max_tokens=MAX_TOKENS).text
     raw = ask(SYSTEM + (ROUNDS_RULES if goal.shape == "rounds" else ""), user_prompt(goal, pieces, today))
     try:
         cur = _Curriculum.model_validate_json(_extract_json(raw))

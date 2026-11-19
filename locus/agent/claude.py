@@ -377,6 +377,7 @@ def ask(
     backoff_s: float = 0.5,
     on_result: ResultSink | None = None,
     thinking: bool = False,
+    max_tokens: int | None = None,
 ) -> ClaudeResult:
     """One call with a system prompt, text and images, with bounded retry-then-raise.
 
@@ -386,7 +387,7 @@ def ask(
     """
     if runner is None:
         def runner(content, model, system):
-            return content_runner(content, model, system, thinking=thinking)
+            return content_runner(content, model, system, thinking=thinking, max_tokens=max_tokens)
     model = model or load().agent.model
     blocks = (
         [image_block(i) for i in images] + [{"type": "text", "text": content}]

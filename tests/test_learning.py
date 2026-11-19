@@ -181,7 +181,8 @@ def test_a_goal_in_rounds_reads_the_whole_plan_and_is_told_to_keep_it(conn):
     from locus.heuris.index import Item, index
 
     embed = _seed(conn)
-    rounds = "| R1 | reference book |" + " filler" * 1200 + " | R13 | engine v2, cache hierarchy |"
+    rounds = ("| R1 | reference book |" + " filler" * 1200 + " | R8 | the `engine = py \\| cpp` switch |"
+              " | R13 | engine v2, cache hierarchy |")
     index(conn, "repos", [Item(ref="doc:learning/cpp-oxdaq/ROUNDS.md", kind="doc", at=datetime(2026, 11, 19, tzinfo=timezone.utc),
                                title="OXDAQ build rounds", text=rounds, thing="learning")], embed=embed)
     L.add_goal(conn, "cpp-oxdaq", "C++ alongside OXDAQ", priority=1)
@@ -192,11 +193,18 @@ def test_a_goal_in_rounds_reads_the_whole_plan_and_is_told_to_keep_it(conn):
 
     def ask(system, user):
         seen.update(system=system, user=user)
-        return '{"summary": "s", "topics": [{"key": "r13", "track": "cpp-performance", "title": "R13: engine v2",' \
-               ' "hours": 12, "weight": 2, "why": "w", "evidence": [{"ref": "doc:learning/cpp-oxdaq/ROUNDS.md",' \
-               ' "quote": "engine v2, cache hierarchy"}]}]}'
+        def t(key, quote, parent=None):
+            return {"key": key, "parent": parent, "track": "x", "title": key, "hours": 2, "weight": 2, "why": "w",
+                    "evidence": [{"ref": "doc:learning/cpp-oxdaq/ROUNDS.md", "quote": quote}]}
+        return __import__("json").dumps({"summary": "s", "topics": [
+            t("R8", "the `engine = py | cpp` switch"), t("R8 build", "reference book", "R8"),   # escape unread
+            t("R9", "an invented quote"), t("R9 build", "reference book", "R9"),               # its section went
+            t("R13", "engine v2, cache hierarchy")]})
 
     p = C.propose(conn, "cpp-oxdaq", refs=["doc:learning/cpp-oxdaq/ROUNDS.md"], queries=["c++"], ask=ask,
                   embed=embed, rerank=lambda q, hits: hits, today=date(2026, 11, 19))
     assert "cache hierarchy" in seen["user"]                   # the last round reached the prompt
-    assert "ROUNDS" in seen["system"] and p.kept == 1          # and its quote held
+    assert "ROUNDS" in seen["system"]
+    kept = [r[0] for r in conn.execute("SELECT title FROM topics WHERE goal='cpp-oxdaq' ORDER BY ord")]
+    assert kept == ["R8", "R8 build", "R13"] and p.kept == 3
+    assert {"topic": "R9 build", "ref": None, "quote": "dropped with its section"} in p.dropped

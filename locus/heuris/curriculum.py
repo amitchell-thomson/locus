@@ -203,6 +203,9 @@ def user_prompt(goal: L.Goal, pieces: list[Piece], today: date) -> str:
 
 
 def _norm(s: str) -> str:
+    # A markdown escape is not text (19 Nov: ROUNDS.md's table has `py \| cpp`, the quote said
+    # `py | cpp`, and R8 was dropped as unquoted).
+    s = re.sub(r"\\([|*_`#\[\]()<>])", r"\1", s)
     s = s.lower().replace("’", "'").replace("‘", "'")
     s = re.sub(r"[‐-―\-]+", "-", s)
     return re.sub(r"\s+", " ", s).strip()
@@ -254,7 +257,11 @@ def propose(conn: sqlite3.Connection, gid: str, *, refs: list[str] = (), queries
                 ok.append(ev)
             else:
                 prop.dropped.append({"topic": t.title, "ref": ev.ref, "quote": ev.quote})
-        if ok:
+        if t.parent and t.parent not in good:
+            # Its section was dropped: kept, it would surface as a section of its own, out of
+            # place (19 Nov, R8's four topics). Topics come parents first, so `good` knows.
+            prop.dropped.append({"topic": t.title, "ref": None, "quote": "dropped with its section"})
+        elif ok:
             good[t.key] = ok
         else:
             prop.dropped.append({"topic": t.title, "ref": None, "quote": "topic dropped: no evidence held"})

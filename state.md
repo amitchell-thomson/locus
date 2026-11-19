@@ -24,9 +24,9 @@
 - 2026-11-13: order C, P, L; the Project window goes.
 
 ## Next
-- cpp-oxdaq: the OXDAQ plan is done (oxdaq-core/docs v3.0, `~/files/Learning/cpp-oxdaq/ROUNDS.md`);
-  its curriculum is proposed (19 Nov, shape `rounds`: 13 rounds, 63 topics, 142 h, R12 society-usable
-  ~16 Apr), waiting for his approval (Learning, `y`).
+- Learning: interview-prep (38 topics) and cpp-oxdaq (64, in rounds) approved and in kairos (19 Nov).
+  Topics follow the one before (`after`); rounds are asap, trees spread; term leans to weekends;
+  kairos `away` profile (Christmas, 28 Dec to 3 Jan) carries no pace. R12 about 24 Apr.
 - L4 sheets and L5 marking (sessions run live until then); progress in `docs/redesign/slices/l-learning.md`.
 - Then the nightly reading digest: spec first.
 - Then a closing pass over the bug-hunt leftovers and gap list (in this session's report).

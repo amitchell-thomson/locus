@@ -1168,6 +1168,27 @@ fn an_asap_task_starts_at_the_front_of_its_window_one_session_a_day() {
     let p = run_plan("2026-10-12 08:00", std::slice::from_ref(&t), &busy, &[]);
     assert_eq!(days(&p), ["Mon 12", "Tue 13"], "spread gave {:?}", days(&spread));
     assert_ne!(days(&spread), days(&p));
+    // Its old spread-out blocks are not kept; its own blocks, replanned, do not move.
+    let named = |p: &Plan| {
+        let mut v = p.create.clone();
+        for (k, b) in v.iter_mut().enumerate() {
+            b.uid = Some(format!("u{k}"));
+        }
+        v
+    };
+    let again = run_plan("2026-10-12 08:00", std::slice::from_ref(&t), &busy, &named(&spread));
+    let mut all: Vec<Block> = again.keep.iter().chain(&again.create).cloned().collect();
+    all.sort_by_key(|b| b.start);
+    let all = Plan {
+        create: all,
+        ..Plan::default()
+    };
+    assert_eq!(days(&all), ["Mon 12", "Tue 13"]);
+    let same = run_plan("2026-10-12 08:00", std::slice::from_ref(&t), &busy, &named(&p));
+    assert!(
+        same.create.is_empty() && same.delete.is_empty() && same.moved == 0,
+        "{same:?}"
+    );
 }
 
 /// `term_weekend_bias` (19 Nov): in term a Thursday or Friday gives way to the weekend after

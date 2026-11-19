@@ -140,6 +140,30 @@ refresher is preceded by a baseline quiz, so we know where the gaps are"). The f
 approved goal sends is a short baseline sheet across its topics. Its marks set each topic's
 starting confidence; the curriculum re-weights once from it, and you approve the change.
 
+**L-D4a. The baseline as built (19 Nov).** [you, 19 Nov: "we can make the sheet a little longer
+if the extra time is worth it ... about 1.5hrs"] One screening sheet for G1 only
+(`interview-prep/sheets/baseline-1`): 12 questions, each climbing (a) basics, (b) interview level,
+(c) the hard edge, with NS / R marks so a part never seen costs seconds; key stored first in
+`interview-prep/.keys/`. Its time is a kairos task in the plan, not on top of it. G2 has no
+baseline sheet (C++ from zero is known); G3 decides when it is proposed. [you, 19 Nov: "First
+sheet should be marked in a chat"] and [you, 19 Nov: "Reweighting should not be a fixed formula
+based on progress through the sheet, it should be a discussion based on what I actually struggled
+with and how I feel, in a claude chat comparing against the current plan"]: so the re-weighting is
+the chat's discussion, applied as kairos changes he agrees to, not a computed proposal.
+
+**L-D4b. Every session has its own local baseline** [you, 19 Nov: "every session should start with
+some starter questions in a claude chat or briefly on the remarkable (depending the format) to
+evaluate a local baseline for that session"], and **marking happens when he asks** [you, 19 Nov:
+"marking of the actual session content should be done when I ask (ok finished, mark now) or 'mark
+what I have so far' or 'why am I getting stuck here, give me a hint' etc..., not some automated
+script that runs and deals badly with specific requests/ scenarios"]. Both live in the session
+protocol (`~/files/Learning/CLAUDE.md`). This replaces L5's automated marking pipeline (Loop B
+transcription, model marking, the marked sheet in Approve) for sessions: marking is the chat's,
+on request, against an answer written before he started (L-D6's key rule kept, in `.keys/`).
+[proposal] What remains for L5 is RECORDING: a marked part he accepts in a chat is written to
+`answers` / `confidence_log` (a small `learning_mark` tool), so L-D5's confidence and spaced
+review still have their data; otherwise the marks live only in chat transcripts.
+
 **L-D5. Confidence is earned only by marked practice.** A topic's confidence moves when an answer
 is marked, and decays without practice (spaced review: a topic you got right comes back later, one
 you got wrong comes back soon). Reading or a session logged without practice moves nothing. This
@@ -262,7 +286,11 @@ the sync; the baseline sheet and practice sheets, answer keys stored first, writ
 `Learning/<goal>/sheets/`, tracked in `sheets`. Check: G1's baseline on the tablet and in
 `~/files`.
 
-**L5. Ink back and marked** (L-D6, L-D12). Capture reads `Learning/`; Loop B transcription of a
+**L4 progress (19 Nov).** Baseline-1 written and on the tablet (`Learning/interview-prep/sheets/`),
+key in `.keys/`, a 90-minute kairos task; the session protocol carries L-D4a/L-D4b. Not built: the
+`sheets` table and a generator for practice sheets (sessions set their own problems for now).
+
+**L5. Ink back and marked** (superseded in part by L-D4b: marking is the chat's, on request) (L-D6, L-D12). Capture reads `Learning/`; Loop B transcription of a
 sheet; marking against the key; the marked sheet in Approve; accepted marks move confidence
 (L-D5) and write the marked PDF to `marked/`. Check: your answers to G1's
 baseline marked, corrected where wrong, confidence set.

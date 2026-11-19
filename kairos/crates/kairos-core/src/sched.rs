@@ -776,6 +776,12 @@ fn run(input: &PlanInput<'_>, g: &Grid<'_>, horizon_idx: usize, keep_existing: b
             .iter()
             .find(|n| n.task.id == b.task_id)
             .is_some_and(|n| i + len <= n.hard_idx);
+        // Not longer than the task now allows (19 Nov: learning sessions went from 120 to 90 min
+        // and the 2 h blocks already placed stayed, since they still fit).
+        let size_ok = needs
+            .iter()
+            .find(|n| n.task.id == b.task_id)
+            .is_some_and(|n| !n.task.splittable || len <= n.ideal_max);
         let aligned = (b.start - g.t0).num_minutes() % g.slot == 0;
         if b.pinned {
             for k in i..(i + len).min(g.n) {
@@ -797,6 +803,7 @@ fn run(input: &PlanInput<'_>, g: &Grid<'_>, horizon_idx: usize, keep_existing: b
             && len <= need
             && aligned
             && deadline_ok
+            && size_ok
             && st.can_place(g, &b.task_id, i, len, false)
         {
             st.place(g, &b.task_id, i, len);

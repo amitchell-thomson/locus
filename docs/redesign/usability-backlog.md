@@ -64,6 +64,14 @@ Each item: what he said, then what it probably involves (a note for later, not a
 - Studies: the compulsory B1 to B3 first, then the chosen options, with the same kind of divider.
 - Fits with item 3: the dividers use rows, so they come with the spare-row layout.
 
+### 4a. The Home chat failed to call locus
+
+> "the home chat also failed to call locus properly"
+
+- Read `locus mcp-log` for the Home chat's calls around then: did they arrive? The Home chat runs
+  `claude -p` with its own MCP config; check it still points at locus after the 18 Nov switch to
+  one MCP (the kairos and keryx entries went).
+
 ### 4. The Home chat: a new chat by default
 
 > "trying to chat from home continues in the last chat when it should start a new one unless I
@@ -114,9 +122,36 @@ Each item: what he said, then what it probably involves (a note for later, not a
 - Month view: ←/→ a day, ↑/↓ a week, moving the selected day (check against the key table).
 - The agenda view (on ⇥): drop it, or make it earn its place. His call when this comes up.
 
+### 6c. More time on a task planned nothing
+
+> "when I added more time in kairos to a task, the scheduler did not work properly and no task
+> block appeared, and I had to get claude to add it itself"
+
+- A bug: raising a task's remaining time should replan and place the extra. Find the path (TUI
+  edit of estimate or remaining, `update_task` with `plan`), reproduce, test.
+
+### 6d. Moving events is slow
+
+> "moving events around is slow and not as responsive as I want"
+
+- Measure a move end to end (key to redraw): the held-keys write, kairosd's apply and the vdir
+  write, the replan, the 3 s index poll. The screen should show the move at once and write after.
+  Goes with item 5 (the selection jumping): likely the same cause.
+
 ---
 
 ## Tasks and Approve
+
+### 7b. Changing a mail item's action in Approve: "locus said no", and it vanished
+
+> "approving some things returned locus said no (eg. brevan howard sarah email finalising renege
+> was going to be archived but should have been filed under bh2027, but when I tried to change
+> it said locus said no and disappeared)"
+
+- A bug, and a bad one: an item he was correcting disappeared, so the mail went neither way he
+  intended. Check where it ended up (archived? still in the inbox?), then fix changing a
+  proposal's action from Approve (archive to file for `bh-2027`) and never drop an item whose
+  change was refused.
 
 ### 7. Learning sessions swamp the task list
 

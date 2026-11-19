@@ -445,6 +445,11 @@ locus/
   `rmapi version` with upstream and read `journalctl --user -u locus-capture.service`.
 - **The reMarkable cloud rate-limits (HTTP 429)**, and a partial tree makes `ls` UNDER-REPORT. Do
   not read a missing entry as a deletion; back off rather than retrying in a loop.
+- **`rmapi rm -r` orphans a folder's documents.** It deletes the folder entries but not the
+  documents in them, which keep a parent that no longer exists, and the tablet shows them in the
+  root (18 Nov: 32 old gr-ai-ml PDFs and its `papers/` and `later/` reappeared at `/`). Delete
+  the documents one by one, deepest first and paced, then the empty folders; afterwards `ls /`
+  as well as the parent, since the parent looks clean either way.
 - **Quarantines are bugs to triage**, which is true only because unsupported files are filed
   separately (§6).
 - **A command that dispatches on flags is tested on the flag combinations its units run**: an

@@ -309,6 +309,14 @@ screen's design rounds [you, 22 Nov]. First
   (advice).
 - **Back into the plan**: profiles and flagged cards feed the next starters and the time
   adjustments; at each section's end a short chat checks the plan against them.
+- **From the walkthrough** [you, 22 Nov: "agree 1-4, no need for the phone view"]:
+  (1) OXDAQ build sessions close the same way (observations and cards through the same tools,
+  in `oxdaq-core`'s "A build session"), not only through the nightly pass; (2) a card carries its
+  source pointer, and the nightly pass makes no card for a moment a session already carded;
+  (3) Review has a key for "this answer is wrong", which sends the card to the next session on
+  its track to be fixed rather than deleting it; (4) reviews stay uncapped, but at most about 20
+  NEW cards enter the queue a day and the rest wait, so a heavy week never buries the due count.
+  No phone view.
 
 ## Steps
 

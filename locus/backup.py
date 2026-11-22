@@ -100,7 +100,7 @@ def _backup_db(src_db: Path, dest_db: Path) -> tuple[int, int]:
 
 
 # Learning state is not derived either (spec L, L-D8): goals, topics, their evidence, the pace.
-LEDGER_TABLES = ("facts", "fact_log", "records", "briefs", "goals", "topics", "topic_evidence", "pace", "curricula", "goal_tasks", "goal_sync")
+LEDGER_TABLES = ("facts", "fact_log", "records", "briefs", "goals", "topics", "topic_evidence", "pace", "curricula", "goal_tasks", "goal_sync", "observations", "cards", "card_reviews")
 
 
 def restore_ledger(snapshot: Path, heuris_db: Path) -> dict[str, int]:
@@ -111,11 +111,11 @@ def restore_ledger(snapshot: Path, heuris_db: Path) -> dict[str, int]:
     src = snapshot / "heuris-ledger.db"
     if not src.exists():
         raise FileNotFoundError(f"{snapshot.name} has no heuris-ledger.db")
-    from locus.heuris import briefs, curriculum, learning, learning_plan, records
+    from locus.heuris import briefs, curriculum, learning, learning_plan, learning_record, records
     from locus.heuris import db as hdb
 
     conn = hdb.connect(heuris_db)
-    for mod in (learning, curriculum, learning_plan, records, briefs):
+    for mod in (learning, curriculum, learning_plan, learning_record, records, briefs):
         mod.ensure(conn)
     added: dict[str, int] = {}
     try:

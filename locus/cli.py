@@ -393,6 +393,25 @@ def cmd_learn(args) -> None:
             elif a == "sync":
                 for gid, what in LP.sync(conn, kairos=_kairos).items():
                     print(f"{gid}: {what}")
+                # The record's quotes, checked once their session is indexed (L10).
+                from locus.config import load as _load
+                from locus.db.connection import get_connection
+                from locus.heuris import learning_record as R
+
+                with closing(get_connection(_load().paths.db)) as gc:
+                    v = R.verify(conn, gate_conn=gc)
+                print(f"record: {v['found']} quote(s) found, {v['waiting']} waiting, {v['unfound']} not found")
+            elif a == "brief":
+                from locus.heuris import learning_record as R
+                from locus.heuris import tools as ht
+
+                print(R.brief(conn, args.goal, args.value,
+                              history=lambda q: ht.search(conn, q, kind="chat", limit=5)))
+            elif a == "record":
+                from locus.heuris import learning_record as R
+
+                print(R.counts(conn))
+                print("\n".join(R.recent(conn, args.goal)))
             elif a == "respread":
                 n, summary = LP.respread(conn, args.goal, kairos=_kairos)
                 print(f"Re-spread {n} open task(s). {summary}")
@@ -1707,12 +1726,12 @@ def main(argv=None) -> None:
 
     ple = sub.add_parser("learn", help="spec L: learning goals and their pace (hours a week)")
     ple.add_argument("action", choices=["list", "show", "add", "pace", "state", "note", "propose", "curriculum", "export",
-                                         "area", "shape", "plan", "approve", "reject", "respread", "sync"])
+                                         "area", "shape", "plan", "approve", "reject", "respread", "sync", "brief", "record"])
     ple.add_argument("--evidence", nargs="*", help="propose: pointers it must use (src:623, fact:196)")
     ple.add_argument("--query", action="append", help="propose: what to search for, instead of the default")
     ple.add_argument("goal", nargs="?", help="a goal id: interview-prep, cpp-oxdaq, quast")
     ple.add_argument("value", nargs="?", help="pace: hours a week; state: proposed, active, paused, done, archived; "
-                                                     "shape: tree (sections interleave) or rounds (in order)")
+                                                     "shape: tree (sections interleave) or rounds (in order); brief: a topic id")
     ple.add_argument("--title", help="add: the goal in words")
     ple.add_argument("--by", help="add: master-by date YYYY-MM-DD")
     ple.add_argument("--priority", type=int, default=2, help="add: 1 highest")

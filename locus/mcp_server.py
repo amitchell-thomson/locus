@@ -275,6 +275,7 @@ def _build(enable_query: bool = False, host: str = "127.0.0.1", public=None) -> 
     # inspect_document (open), critique, synthesise, objects and evolution. Their engines were
     # deleted in Slice C (C2).
     _register_heuris(tool)
+    _register_learning(tool)
     if public is not None:
         _login_routes(mcp, public[0])
 
@@ -792,6 +793,92 @@ def _register_heuris(tool) -> None:
         """
         with _conn() as c:
             return ht.timeline(c, about, since=since, until=until, kind=kind)
+
+
+# Module level, not inside the function: FastMCP evaluates the string annotations (`from
+# __future__ import annotations`) against this module's globals.
+from locus.heuris.learning_record import CardIn, ObservationIn  # noqa: E402
+
+
+def _register_learning(tool) -> None:
+    """learning_brief, learning_observe, learning_cards: the learning record (spec L, L10)."""
+    from contextlib import closing
+
+    from locus.heuris import db as hdb
+    from locus.heuris import learning as L
+    from locus.heuris import learning_record as R
+
+    def _conn():
+        return closing(hdb.connect())
+
+    @tool()
+    def learning_brief(goal: str, topic: int | None = None) -> str:
+        """Read before teaching a learning session (spec L, L-D13): the topic and where it sits,
+        what the evidence shows on its track (solid, shaky, open questions, misconceptions,
+        fading), which topics on the track have NO evidence (probe them in the starters, never
+        assume them), the coding-practice profile for a coding goal (a review expects only what
+        is seen there), cards to re-teach (failed three times, or marked wrong in Review), and
+        his related history. No evidence means unknown.
+
+        Args:
+            goal: interview-prep, cpp-oxdaq, quast.
+            topic: the topic id from the kairos task's notes ("topic 41"); without it, every
+                track of the goal in one line each.
+        """
+        from locus.heuris import tools as ht
+
+        def history(q: str) -> str:
+            with _conn() as c:
+                return ht.search(c, q, kind="chat", limit=5)
+
+        with _conn() as c:
+            try:
+                return R.brief(c, goal, topic, history=history)
+            except (R.RecordError, L.LearningError) as e:
+                return f"No brief: {e}"
+
+    @tool()
+    def learning_observe(goal: str, observations: list[ObservationIn], session: str | None = None,
+                         origin: str = "session") -> str:
+        """At a session's close, record what he SHOWED and ASKED (L-D13), one moment each: done
+        cold, explained back, needed a hint, got wrong, was told, a question he asked, a
+        confusion, a misconception. Quote HIS words from this chat exactly: each quote is checked
+        against the transcript once it is indexed, and one that is not there is hidden. Write
+        what happened, not a verdict ("set up the reflection, did not finish", not "weak at
+        counting"). Several per session; a quiet session may have two, a rich one ten.
+
+        Args:
+            goal: interview-prep, cpp-oxdaq, quast.
+            observations: each {track, kind, text, quote, topic}.
+            session: this chat's session id: run `echo $CLAUDE_CODE_SESSION_ID`.
+            origin: session (a learning session) or build (an OXDAQ build session).
+        """
+        with _conn() as c:
+            try:
+                return R.observe(c, goal, observations, session=session, origin=origin).line("observation")
+            except (R.RecordError, L.LearningError) as e:
+                return f"Nothing recorded: {e}"
+
+    @tool()
+    def learning_cards(goal: str, cards: list[CardIn], session: str | None = None, origin: str = "session") -> str:
+        """Write the review cards he kept at a session's close (propose them first; he strikes
+        any). Only from a real moment of this session: something wrong, hinted, asked, confused,
+        or met for the first time. One idea each; recall, not recognition; why/when over what;
+        his own confusion as the prompt where there was one; code: "predict the output" or "what
+        is wrong here"; maths: the set-up, not the number. The answer must be right: a wrong
+        answer drilled is worse than none. A duplicate on the track is refused.
+
+        Args:
+            goal: interview-prep, cpp-oxdaq, quast.
+            cards: each {track, prompt, answer, moment, quote, topic}.
+            session: this chat's session id: run `echo $CLAUDE_CODE_SESSION_ID`.
+            origin: session or build.
+        """
+        with _conn() as c:
+            try:
+                return R.add_cards(c, goal, cards, session=session, origin=origin).line("card")
+            except (R.RecordError, L.LearningError) as e:
+                return f"No cards written: {e}"
 
 
 def _login_routes(mcp, provider) -> None:

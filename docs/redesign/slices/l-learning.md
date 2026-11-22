@@ -369,6 +369,14 @@ covered); tools `learning_brief(goal, topic)` (profile, related history, due and
 real session's close writes observations quoting him and proposes cards; the next session's brief
 shows them.
 
+**L10 progress (22 Nov).** Built: the three tables (`locus/heuris/learning_record.py`, in the
+backup), the tools `learning_brief`, `learning_observe`, `learning_cards`, `locus learn brief` and
+`locus learn record`, and the quote check (`verify`, after each `locus learn sync`: a session's
+quote is matched to HIS turn of that session once indexed, pinned to it, and hidden after 48 h if
+never found; gate `learning.observation_quote`). The profile is computed when read, so L11's
+"profile rebuilt" is only the nightly observations. Protocols: `~/files/Learning/CLAUDE.md` steps
+1a, 5a, 5b; oxdaq-core's "A build session" step 6 (on a branch, for his PR).
+
 **L11. The nightly pass and profiles.** Derive reads the day's chats in `Learning/` and
 `oxdaq-core`, writes grounded observations and cards; one profile per track rebuilt. Check: a
 question he asked in an OXDAQ build chat becomes an observation and a card the next morning;

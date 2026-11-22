@@ -153,7 +153,13 @@ Each item: what he said, then what it probably involves (a note for later, not a
   proposal's action from Approve (archive to file for `bh-2027`) and never drop an item whose
   change was refused.
 
-### 7. Learning sessions swamp the task list
+### 7. Learning sessions swamp the task list (done 22 Nov)
+
+**Done 22 Nov:** kairos tasks carry a display-only `group` (the learning goal); Tasks lists his own
+tasks first, then one heading per goal with only the topics planned in the next 7 days and "N more
+topics later"; Home shows his tasks and each goal's next topic; a soft due no longer shows as a
+deadline.
+
 
 > "approve and tasks are fine, with an issue being that the learning plan sessions DOMINATE the
 > task view massively, to the point where I cannot scroll to see anything else, especially when

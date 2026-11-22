@@ -262,6 +262,53 @@ repo. That code is the product. It is reviewed and marked the same way, but it l
 
 ---
 
+**L-D13. The learning loop (22 Nov), replacing L5's marking pipeline and L-D5's confidence
+bars.** [you, 22 Nov: "I feel like recording concepts is a little static and rigid ... there
+would end up being hundreds and hundreds of concepts"; "my questions and confusions which I will
+say in chat are super useful for gauging my understanding"] The record is built from what he
+shows and says, not from a catalogue:
+
+- **The conversations are the evidence.** Sessions and every other chat in `Learning/` or
+  `oxdaq-core` are already indexed. A learning layer reads them.
+- **Observations** (`observations`, ledger, not derived): free text, one track tag from the
+  curricula's tracks, a kind (cold, hinted, wrong, explained back, explained to him, question,
+  confusion, misconception), his words quoted and a pointer to the chat. Written two ways [you,
+  22 Nov: "both"]: by the session chat at the close (`learning_observe`), and by a nightly pass
+  over other chats whose quotes are checked against the transcript like a fact's (grounded or
+  silent).
+- **One profile per track** [you, 22 Nov: "one per track"] (derived, rebuilt from observations,
+  about 20): solid, shaky, open questions, misconceptions, last seen, with pointers; "fading" is
+  computed from dates when read, so it never goes stale. Weighting: explained back > cold
+  (session or timed) > review graded right > hinted > explained to him.
+- **No evidence means unknown.** Before teaching, a session reads the track profile and searches
+  his history; anything unevidenced is probed in the starters, never assumed. Coding practice
+  has a profile per language; a code review expects only practices he has been seen to know, and
+  a new one is introduced explicitly (and becomes a card).
+- **Cards are born only from real moments**: wrong, hinted, a question, a confusion, a first
+  meeting. One idea each, recall not recognition, "why/when" over "what", his own confusion as
+  the prompt where there was one; for code "predict the output" or "what is wrong here", for
+  maths the set-up rather than the number. Session cards are proposed at the close and he
+  strikes any; nightly cards add themselves [you, 22 Nov: "add themselves, I will delete any
+  cards that are bad as I see them"].
+- **Review** [you, 22 Nov: "do not cap review cards per session, reviews will later be a section
+  in learning with an tui anki-style tool"]: a Review section at the top of Learning; every due
+  card from every goal in one mixed queue, uncapped; question, think, reveal, grade. Grades: 1
+  wrong, 2 hard (right but a struggle: back sooner), 3 right [proposal: the third grade]. First
+  review the next day; the gap grows on right and resets on wrong. A card failed three times is
+  flagged and the next session on its track re-teaches it: reviews do not fix a
+  misunderstanding, sessions do. Edit, suspend, delete from the card.
+- **The nudge is the count** [you, 22 Nov: "surfacing it on home or having it at the top of the
+  learning section so ... I want to do the cards to get the number of cards 'due' to zero"]:
+  "N cards due" on Home and atop Learning; no kairos block.
+- **Session shape** (all three kinds: chat, tablet sheet, code): starters (recall, local
+  baseline) → he attempts before being taught → practice, hints and marks on request → explain
+  it back → one timed problem cold → close (log, observations, cards, adjust time, `next.md`).
+  A tablet session's sheet is named by session ("interview-prep session 03 (counting)") with its
+  key stored first; a code session's "mark now" is the tests (deterministic) plus a review
+  (advice).
+- **Back into the plan**: profiles and flagged cards feed the next starters and the time
+  adjustments; at each section's end a short chat checks the plan against them.
+
 ## Steps
 
 Each step ends with a printed check against real data.
@@ -290,7 +337,8 @@ the sync; the baseline sheet and practice sheets, answer keys stored first, writ
 key in `.keys/`, a 90-minute kairos task; the session protocol carries L-D4a/L-D4b. Not built: the
 `sheets` table and a generator for practice sheets (sessions set their own problems for now).
 
-**L5. Ink back and marked** (superseded in part by L-D4b: marking is the chat's, on request) (L-D6, L-D12). Capture reads `Learning/`; Loop B transcription of a
+**L5. Ink back and marked** (superseded by L-D4b and L-D13: marking is the chat's, on request; the
+record is L10 to L12) (L-D6, L-D12). Capture reads `Learning/`; Loop B transcription of a
 sheet; marking against the key; the marked sheet in Approve; accepted marks move confidence
 (L-D5) and write the marked PDF to `marked/`. Check: your answers to G1's
 baseline marked, corrected where wrong, confidence set.
@@ -305,6 +353,21 @@ Check: one G2 exercise written by you, run, reviewed, marked.
 engine, the Python boundary, milestones rejigged); then G2 proposed as rounds against those
 milestones, and G3 from QUAST's repo; both approved, one marked round each. Check: three goals live, shared tracks counting across them
 (probability marked for G1 shows in a B-course goal later; linear algebra for G1 and G3).
+
+**L10. The record** (L-D13). Tables `observations`, `cards`, `card_reviews` in the ledger (backup
+covered); tools `learning_brief(goal, topic)` (profile, related history, due and flagged cards),
+`learning_observe` and `learning_cards`; the session protocol rewritten around them. Check: a
+real session's close writes observations quoting him and proposes cards; the next session's brief
+shows them.
+
+**L11. The nightly pass and profiles.** Derive reads the day's chats in `Learning/` and
+`oxdaq-core`, writes grounded observations and cards; one profile per track rebuilt. Check: a
+question he asked in an OXDAQ build chat becomes an observation and a card the next morning;
+`locus gates` shows what the quote check refused.
+
+**L12. Review.** The Review section at the top of Learning (mixed queue, reveal, 1/2/3, edit,
+suspend, delete), the schedule, flagged cards, "N cards due" on Home. Check: a day's due cards
+cleared to zero in the window; a thrice-failed card appears in the next session's brief.
 
 **L9. Report** and the test questions 27 to 32 and P3 to P5 re-run.
 

@@ -2121,6 +2121,7 @@ impl Engine {
         t.after = req.after.clone().filter(|a| !a.trim().is_empty());
         t.asap = req.asap.unwrap_or(false);
         t.term_weekend_bias = req.term_weekend_bias.unwrap_or(false);
+        t.group = req.group.clone().filter(|g| !g.trim().is_empty());
         if let Some(w) = &req.preferred_window {
             if self.constraints.window(w).is_none() {
                 return Err(EngineError::BadRequest(format!("unknown window {w:?}")));
@@ -2283,6 +2284,9 @@ impl Engine {
         }
         if let Some(x) = req.term_weekend_bias {
             t.term_weekend_bias = x;
+        }
+        if let Some(g) = &req.group {
+            t.group = if g.trim().is_empty() { None } else { Some(g.clone()) };
         }
         if let Some(w) = &req.preferred_window {
             t.preferred_window = if w.is_empty() { None } else { Some(w.clone()) };
@@ -2670,8 +2674,11 @@ impl Engine {
                         Some(p) => p.stream.clone(),
                         None => key.filter(|k| k.area.is_some()).map(|k| k.name.clone()),
                     },
-                    due,
+                    // A soft due only bounds the planning (a learning topic's window): the page
+                    // would otherwise show 110 "due" dates that are not deadlines.
+                    due: if t.soft_due { None } else { due },
                     due_is_date,
+                    group: t.group.clone(),
                     left_min: t.remaining_min,
                     estimate_min: t.estimate_min,
                     done: (t.status == TaskStatus::Done).then(|| at(t.updated_at)),

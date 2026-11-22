@@ -205,6 +205,7 @@ def test_a_goal_in_rounds_is_walked_in_order_not_side_by_side(conn):
     assert [b.get("after") for b in made] == [None, "t1", "t2"]
     assert all(b["ideal_chunk_min"] == 45 and b["max_chunk_min"] == 90 for b in made)
     assert all(b["asap"] and b["term_weekend_bias"] for b in made)       # in rounds: asap
+    assert all(b["group"] == "interview-prep" for b in made)            # one heading on Tasks
     assert ids
 
 

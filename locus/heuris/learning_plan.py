@@ -260,7 +260,7 @@ def approve(conn: sqlite3.Connection, gid: str, *, kairos: Kairos, today: date |
                 "earliest_start": w.start.isoformat(), "due": w.due.isoformat(),
                 "soft_due": True, "create_deadline": False, "plan": False,
                 "min_chunk_min": SESSION_MIN, "max_chunk_min": SESSION_MAX, "ideal_chunk_min": SESSION_MIN,
-                "asap": g.shape == "rounds", "term_weekend_bias": True,
+                "asap": g.shape == "rounds", "term_weekend_bias": True, "group": gid,
                 "notes": f"Learning goal {gid} ({g.title}), topic {w.topic}. {why.get(w.topic, '')}\n"
                          f"Sheets and code: ~/files/Learning/{gid}/"}
         if g.thing:
@@ -313,7 +313,7 @@ def respread(conn: sqlite3.Connection, gid: str, *, kairos: Kairos, today: date 
                {"earliest_start": w.start.isoformat(), "due": w.due.isoformat(), "plan": False,
                 "after": ids[lead] if lead is not None else "",
                 "min_chunk_min": SESSION_MIN, "max_chunk_min": SESSION_MAX, "ideal_chunk_min": SESSION_MIN,
-                "asap": g.shape == "rounds", "term_weekend_bias": True},
+                "asap": g.shape == "rounds", "term_weekend_bias": True, "group": gid},
                author="alec")
     # Its blocks are placed afresh: kept, the ones that still fit would stay where the old
     # windows put them (19 Nov).

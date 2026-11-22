@@ -658,6 +658,7 @@ mod task_tests {
             estimate_min: 300,
             next_block: Some(at("2026-10-25T13:00:00Z")),
             put_off: 0,
+            group: None,
             done: None,
         }
     }
@@ -726,6 +727,75 @@ mod task_tests {
             "{:?}",
             app.note
         );
+    }
+}
+
+#[cfg(test)]
+mod group_tests {
+    use crate::app::App;
+    use crate::fixtures::{Fixtures, resolve};
+    use crate::screen::ScreenId;
+    use crate::uselog::UseLog;
+    use chrono::Duration;
+
+    /// 22 Nov: a learning goal's topic tasks swamped Tasks and Home. Yours come first; a goal
+    /// shows only the topics planned in the next week (at least its next one), then a count.
+    #[test]
+    fn a_learning_goal_shows_only_what_is_coming_up() {
+        let mut fx = Fixtures::load(&resolve("default")).unwrap();
+        let now = fx.now();
+        let item = |id: &str, title: &str, group: Option<&str>, in_days: Option<i64>| locus_contract::TaskItem {
+            id: id.into(),
+            title: title.into(),
+            for_id: None,
+            for_label: if group.is_some() {
+                "Careers".into()
+            } else {
+                "Errands".into()
+            },
+            area: "Careers".into(),
+            stream: None,
+            due: None,
+            due_is_date: false,
+            before: None,
+            left_min: 90,
+            estimate_min: 90,
+            next_block: in_days.map(|d| now + Duration::days(d)),
+            put_off: 0,
+            group: group.map(String::from),
+            done: None,
+        };
+        let mut tasks = vec![item("t-own", "post the parcel", None, Some(1))];
+        for k in 0..10 {
+            tasks.push(item(
+                &format!("t-{k}"),
+                &format!("topic {k}"),
+                Some("interview-prep"),
+                Some(2 + 3 * k),
+            ));
+        }
+        super::apply_tasks(&mut fx, &tasks);
+        let mut app = App::new(fx, ScreenId::Tasks, UseLog::off());
+        let open: Vec<String> = crate::ui::tasks::open(&app).iter().map(|t| t.title.clone()).collect();
+        assert_eq!(open, ["post the parcel", "topic 0", "topic 1"]); // days 2 and 5, not 8+
+        let g = &crate::ui::tasks::groups(&app)[0];
+        assert_eq!((g.name.as_str(), g.later), ("interview-prep", 8));
+        let page = crate::dump::render(&app, 120, 40).unwrap();
+        assert!(
+            page.contains("learning · interview-prep") && page.contains("8 more topics later"),
+            "{page}"
+        );
+        assert!(!page.contains("topic 2"), "{page}");
+        // Home: yours, then the goal's next topic only.
+        let rows: Vec<String> = crate::ui::home::task_rows(&app).into_iter().map(|r| r.0).collect();
+        assert_eq!(rows, ["post the parcel", "topic 0"]);
+        // A goal with nothing in the next week still shows its next topic.
+        for t in app.fixtures.tasks.tasks.iter_mut().filter(|t| t.group.is_some()) {
+            t.next_block = t.next_block.map(|b| b + Duration::days(30));
+        }
+        let open: Vec<String> = crate::ui::tasks::open(&app).iter().map(|t| t.title.clone()).collect();
+        assert_eq!(open, ["post the parcel", "topic 0"]);
+        app.fixtures.tasks.tasks.clear();
     }
 }
 

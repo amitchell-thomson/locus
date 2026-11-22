@@ -53,16 +53,75 @@ pub fn add_in_kairos(app: &mut App, for_id: Option<String>) {
     ask_kairos(app, &req, format!("adding a task{what} in kairos"));
 }
 
-/// The open tasks in the order drawn: grouped by what they are for, the group due soonest first,
-/// within it by due date.
+/// How far ahead a learning goal's topics show (22 Nov: "the learning plan sessions DOMINATE the
+/// task view"): a goal's 41 topic tasks are its curriculum, which Learning shows; here only what
+/// is coming up.
+pub const GROUP_AHEAD_DAYS: i64 = 7;
+
+/// A set of tasks shown under one heading (a learning goal): the topics coming up, and how many
+/// more come later.
+pub struct Group<'a> {
+    pub name: String,
+    pub shown: Vec<&'a TaskItem>,
+    pub later: usize,
+}
+
+/// Each group's open tasks: those next planned within `GROUP_AHEAD_DAYS`, by next block, and at
+/// least the next one (by next block, else the first). Groups in name order.
+pub fn groups(app: &App) -> Vec<Group<'_>> {
+    let now = app.fixtures.now();
+    let mut by: std::collections::BTreeMap<String, Vec<&TaskItem>> = std::collections::BTreeMap::new();
+    for t in app.fixtures.tasks.tasks.iter().filter(|t| t.done.is_none()) {
+        if let Some(g) = &t.group {
+            by.entry(g.clone()).or_default().push(t);
+        }
+    }
+    by.into_iter()
+        .map(|(name, mut v)| {
+            v.sort_by_key(|t| (t.next_block.is_none(), t.next_block));
+            let total = v.len();
+            let mut shown: Vec<&TaskItem> = v
+                .iter()
+                .copied()
+                .filter(|t| t.next_block.is_some_and(|b| (b - now).num_days() < GROUP_AHEAD_DAYS))
+                .collect();
+            if shown.is_empty() {
+                shown = v.into_iter().take(1).collect();
+            }
+            Group {
+                later: total - shown.len(),
+                name,
+                shown,
+            }
+        })
+        .collect()
+}
+
+/// The open tasks in the order drawn: yours, grouped by what they are for, the group due soonest
+/// first, within it by due date; then each learning goal's coming topics (`groups`).
 pub fn open(app: &App) -> Vec<&TaskItem> {
-    let mut v: Vec<&TaskItem> = app.fixtures.tasks.tasks.iter().filter(|t| t.done.is_none()).collect();
+    let mut v = own(app);
+    for g in groups(app) {
+        v.extend(g.shown);
+    }
+    v
+}
+
+/// The tasks in no group, in the page's order.
+fn own(app: &App) -> Vec<&TaskItem> {
+    let mut v: Vec<&TaskItem> = app
+        .fixtures
+        .tasks
+        .tasks
+        .iter()
+        .filter(|t| t.done.is_none() && t.group.is_none())
+        .collect();
     let soonest = |label: &str| {
         app.fixtures
             .tasks
             .tasks
             .iter()
-            .filter(|t| t.done.is_none() && t.for_label == label)
+            .filter(|t| t.done.is_none() && t.group.is_none() && t.for_label == label)
             .filter_map(|t| t.due)
             .min()
     };
@@ -142,21 +201,35 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
             dim(),
         )));
     }
-    let mut last: Option<&str> = None;
+    let groups = groups(app);
+    let later = |name: &str| groups.iter().find(|g| g.name == name).map_or(0, |g| g.later);
+    let mut last: Option<String> = None;
     for (k, t) in tasks.iter().enumerate() {
-        if last != Some(t.for_label.as_str()) {
-            if last.is_some() {
+        // A group's heading is the goal ("learning · cpp-oxdaq"); yours keep what they are for.
+        let heading = match &t.group {
+            Some(g) => format!("learning · {g}"),
+            None => t.for_label.clone(),
+        };
+        if last.as_deref() != Some(heading.as_str()) {
+            if let Some(prev) = last.take() {
+                push_later(
+                    &mut out,
+                    later(prev.trim_start_matches("learning · ")),
+                    prev.starts_with("learning · "),
+                );
                 out.push(Line::from(""));
             }
-            last = Some(t.for_label.as_str());
-            out.push(Line::from(vec![
+            last = Some(heading.clone());
+            let colour = area_colour(app, t.stream.as_deref().unwrap_or(&t.area));
+            let mut head = vec![
                 Span::raw("  "),
-                Span::styled("● ", st(area_colour(app, t.stream.as_deref().unwrap_or(&t.area)))),
-                Span::styled(
-                    t.for_label.clone(),
-                    bold(st(area_colour(app, t.stream.as_deref().unwrap_or(&t.area)))),
-                ),
-            ]));
+                Span::styled("● ", st(colour)),
+                Span::styled(heading.clone(), bold(st(colour))),
+            ];
+            if t.group.is_some() {
+                head.push(Span::styled(format!("{SEP}the next {GROUP_AHEAD_DAYS} days"), dim()));
+            }
+            out.push(Line::from(head));
         }
         let mut right = Vec::new();
         if let Some((d, urgent)) = due_text(now, t) {
@@ -188,6 +261,13 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
             w,
         ));
     }
+    if let Some(prev) = last {
+        push_later(
+            &mut out,
+            later(prev.trim_start_matches("learning · ")),
+            prev.starts_with("learning · "),
+        );
+    }
     // Done this week, quieter, newest first.
     let mut done: Vec<&TaskItem> = app.fixtures.tasks.tasks.iter().filter(|t| t.done.is_some()).collect();
     done.sort_by_key(|t| std::cmp::Reverse(t.done));
@@ -207,6 +287,19 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         }
     }
     lines(f, inner, out);
+}
+
+/// Under a learning goal: how many topics come later, and where the whole curriculum is.
+fn push_later(out: &mut Vec<Line<'static>>, n: usize, is_group: bool) {
+    if is_group && n > 0 {
+        out.push(Line::from(Span::styled(
+            format!(
+                "       {n} more topic{} later{SEP}L: the curriculum",
+                if n == 1 { "" } else { "s" }
+            ),
+            dim(),
+        )));
+    }
 }
 
 pub fn key(app: &mut App, k: KeyEvent) -> bool {

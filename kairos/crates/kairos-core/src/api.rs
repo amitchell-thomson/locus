@@ -222,6 +222,9 @@ pub struct CreateTaskReq {
     /// In term, lean slightly towards weekends (`Task::term_weekend_bias`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub term_weekend_bias: Option<bool>,
+    /// The set it belongs to (`Task::group`), e.g. a learning goal; `""` clears (update only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
     /// The locus item it belongs to (a registry id).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locus: Option<String>,
@@ -290,6 +293,9 @@ pub struct UpdateTaskReq {
     /// In term, lean slightly towards weekends (`Task::term_weekend_bias`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub term_weekend_bias: Option<bool>,
+    /// The set it belongs to (`Task::group`), e.g. a learning goal; `""` clears (update only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]

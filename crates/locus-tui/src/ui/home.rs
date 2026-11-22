@@ -439,8 +439,18 @@ fn draw_border(f: &mut Frame, area: Rect, app: &App) -> Rect {
 /// The tasks Home lists (spec E7, round 7a): open ones by due date, then chores put off or
 /// overdue that are not among them; the rows `d` walks.
 pub fn task_rows(app: &App) -> Vec<(String, Option<locus_contract::Time>, u32, Option<String>)> {
-    let mut by_due: Vec<_> = crate::ui::tasks::open(app);
+    // Yours by due date, then each learning goal's next topic only (22 Nov: the learning topics
+    // swamped this list).
+    let mut by_due: Vec<_> = crate::ui::tasks::open(app)
+        .into_iter()
+        .filter(|t| t.group.is_none())
+        .collect();
     by_due.sort_by_key(|t| (t.due.is_none(), t.due));
+    by_due.extend(
+        crate::ui::tasks::groups(app)
+            .into_iter()
+            .filter_map(|g| g.shown.first().copied()),
+    );
     let mut v: Vec<_> = by_due
         .into_iter()
         .map(|t| (t.title.clone(), t.due, t.put_off, t.for_id.clone()))

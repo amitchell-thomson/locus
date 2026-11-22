@@ -43,6 +43,10 @@ pub struct TaskItem {
     /// How many of its blocks you checked in as missed.
     #[serde(default)]
     pub put_off: u32,
+    /// The set it belongs to (a learning goal's id): the page folds it under one heading and shows
+    /// only what is coming up (22 Nov).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
     /// When you finished it (done this week).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub done: Option<Time>,

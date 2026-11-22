@@ -2555,8 +2555,26 @@ fn tasks_and_chores_go_to_locus_as_its_own_types() {
         )
         .unwrap();
     }
+    // A learning topic: its group goes to the page, and its soft due is no deadline there.
+    e.create_task(
+        Author::Alec,
+        &CreateTaskReq {
+            title: "Counting taught properly".into(),
+            key: "Engineering".into(),
+            estimate_min: 180,
+            due: Some("2026-11-06".into()),
+            soft_due: Some(true),
+            group: Some("interview-prep".into()),
+            plan: Some(false),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     let items = e.tasks_overview().unwrap();
+    let topic = items.iter().find(|t| t.title == "Counting taught properly").unwrap();
+    assert_eq!((topic.group.as_deref(), topic.due), (Some("interview-prep"), None));
     let b15 = items.iter().find(|t| t.title == "B15 sheet 4").unwrap();
+    assert_eq!(b15.group, None);
     assert_eq!(
         (b15.for_id.as_deref(), b15.for_label.as_str(), b15.area.as_str()),
         (Some("b15"), "B15 Control Systems", "Studies")

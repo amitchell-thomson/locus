@@ -131,6 +131,10 @@ pub struct Task {
     /// don't. Spread: a term weekday's free time counts three quarters in the sharing out.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub term_weekend_bias: bool,
+    /// A set it belongs to, shown together (22 Nov: a learning goal's 41 topic tasks swamped
+    /// locus's Tasks page). Display only: the scheduler ignores it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
     pub created_by: Author,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -197,6 +201,7 @@ impl Task {
             after: None,
             asap: false,
             term_weekend_bias: false,
+            group: None,
             created_by,
             created_at: now,
             updated_at: now,

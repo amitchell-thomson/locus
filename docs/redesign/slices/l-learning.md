@@ -293,7 +293,8 @@ shows and says, not from a catalogue:
 - **Review** [you, 22 Nov: "do not cap review cards per session, reviews will later be a section
   in learning with an tui anki-style tool"]: a Review section at the top of Learning; every due
   card from every goal in one mixed queue, uncapped; question, think, reveal, grade. Grades: 1
-  wrong, 2 hard (right but a struggle: back sooner), 3 right [proposal: the third grade]. First
+  wrong, 2 hard (right but a struggle: back sooner), 3 right [you, 22 Nov: "I agree hard is a good idea"]; the exact layout is for the Learning
+screen's design rounds [you, 22 Nov]. First
   review the next day; the gap grows on right and resets on wrong. A card failed three times is
   flagged and the next session on its track re-teaches it: reviews do not fix a
   misunderstanding, sessions do. Edit, suspend, delete from the card.

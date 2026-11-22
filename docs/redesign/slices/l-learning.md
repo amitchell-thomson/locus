@@ -375,7 +375,10 @@ backup), the tools `learning_brief`, `learning_observe`, `learning_cards`, `locu
 quote is matched to HIS turn of that session once indexed, pinned to it, and hidden after 48 h if
 never found; gate `learning.observation_quote`). The profile is computed when read, so L11's
 "profile rebuilt" is only the nightly observations. Protocols: `~/files/Learning/CLAUDE.md` steps
-1a, 5a, 5b; oxdaq-core's "A build session" step 6 (on a branch, for his PR).
+1a, 5a, 5b; "A build session" step 6, which lives in `oxdaq-core/CLAUDE.local.md`, ignored by
+git (22 Nov: locus things in the OQTS repos "should be gitignored and not pushed", being about
+how he works, not the exchange). Session 01 backfilled: 14 observations (every quote found) and
+the 11 cards he kept.
 
 **L11. The nightly pass and profiles.** Derive reads the day's chats in `Learning/` and
 `oxdaq-core`, writes grounded observations and cards; one profile per track rebuilt. Check: a

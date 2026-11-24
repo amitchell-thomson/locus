@@ -524,9 +524,9 @@ def _heuris_derive(conn, args) -> None:
     from locus.agent import usage
     from locus.config import load as _load
     from locus.db.connection import get_connection
-    from locus.heuris import briefs, derive, records
+    from locus.heuris import briefs, derive, learning_nightly, records
 
-    jobs = args.jobs or ["facts", "records", "briefs"]
+    jobs = args.jobs or ["facts", "records", "briefs", "learning"]
     gate_conn = get_connection(_load().paths.db)
     try:
         errors: list[str] = []
@@ -551,6 +551,9 @@ def _heuris_derive(conn, args) -> None:
                 ("records", lambda: records.run_records(conn, since=args.since, limit=args.limit, force=args.force,
                                                         submit_new=submit_new)),
                 ("briefs", lambda: briefs.run_briefs(conn, force=args.force, submit_new=submit_new)),
+                # The nightly pass over learning chats (spec L, L11): submits only at night.
+                ("learning", lambda: learning_nightly.run(conn, force=args.force, gate_conn=gate_conn,
+                                                          submit_new=submit_new)),
             ):
                 if name not in jobs:
                     continue
@@ -1717,7 +1720,8 @@ def main(argv=None) -> None:
     phe.add_argument("--limit", type=int, default=None, help="derive: at most this many threads per batch")
     phe.add_argument("--force", action="store_true", help="derive: past the day's credit pace (a backfill)")
     phe.add_argument("--wait", action="store_true", help="derive: wait for the batches and apply them")
-    phe.add_argument("--jobs", nargs="*", choices=["facts", "records", "briefs"], help="derive: which (default all)")
+    phe.add_argument("--jobs", nargs="*", choices=["facts", "records", "briefs", "learning"],
+                     help="derive: which (default all)")
     phe.add_argument("sources", nargs="*", default=[], help="mail calendar chats repos (default: all)")
     phe.add_argument("--json", action="store_true", help="status as JSON")
     phe.add_argument("--relink", action="store_true", help="syllabus: link every topic again, not only changed ones")

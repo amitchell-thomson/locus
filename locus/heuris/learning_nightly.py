@@ -143,11 +143,15 @@ SCHEMA = {
     "properties": {
         "observations": {"type": "array", "items": {
             "type": "object",
-            "properties": {k: {"type": "string"} for k in ("goal", "track", "kind", "text", "quote")},
+            "properties": {**{k: {"type": "string"} for k in ("goal", "track", "text", "quote")},
+                           "kind": {"type": "string", "enum": list(R.KINDS)}},
             "required": ["goal", "track", "kind", "text", "quote"], "additionalProperties": False}},
         "cards": {"type": "array", "items": {
             "type": "object",
-            "properties": {k: {"type": "string"} for k in ("goal", "track", "moment", "prompt", "answer", "quote")},
+            # An enum, not a free string: on 24 Nov the model wrote "timed problem (d)" as the
+            # moment and both cards of the first real run were refused.
+            "properties": {**{k: {"type": "string"} for k in ("goal", "track", "prompt", "answer", "quote")},
+                           "moment": {"type": "string", "enum": list(R.CARD_MOMENTS)}},
             "required": ["goal", "track", "moment", "prompt", "answer", "quote"], "additionalProperties": False}},
     },
     "required": ["observations", "cards"],
@@ -246,7 +250,11 @@ def apply(conn: sqlite3.Connection, session: str, upto_ts: int, raw: str, *, def
         goal = c.get("goal") if c.get("goal") in goals else default_goal
         if goal is None:
             continue
-        w = R.add_cards(conn, goal, [{"track": c.get("track"), "moment": c.get("moment"), "prompt": c.get("prompt"),
+        moment = c.get("moment")
+        if moment not in R.CARD_MOMENTS:      # the moment it quotes says what it was
+            kind = conn.execute("SELECT kind FROM observations WHERE session=? AND quote=?", (session, match)).fetchone()
+            moment = kind[0] if kind and kind[0] in R.CARD_MOMENTS else "wrong"
+        w = R.add_cards(conn, goal, [{"track": c.get("track"), "moment": moment, "prompt": c.get("prompt"),
                                       "answer": c.get("answer"), "quote": match}],
                         session=session, origin="nightly")
         out.cards += len(w.ids)

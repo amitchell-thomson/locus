@@ -385,6 +385,16 @@ the 11 cards he kept.
 question he asked in an OXDAQ build chat becomes an observation and a card the next morning;
 `locus gates` shows what the quote check refused.
 
+**L11 progress (24 Nov).** Built: `locus/heuris/learning_nightly.py`, the `learning` job of
+`locus heuris derive` (hourly timer; it submits only between 02:00 and 06:00 London, so once a
+night). Chats whose working directory is `~/files/Learning`, `oqts/oxdaq-core` or
+`oqts/oxdaq-ops` [you, 24 Nov: "not the whole of oqts because it is not worth going over
+throwaway website tweaking chats"], read once quiet for 2 h and again only for new turns of his
+(`learning_reads`); Sonnet on the batch API. Each quote must be in one of his new turns (gate
+`learning.nightly_quote`) and is pinned to it; a card must quote a recorded moment; a moment
+the session's close recorded is neither recorded nor carded again. The per-track profile is not
+a nightly job: the brief computes it when read (L10).
+
 **L12. Review.** The Review section at the top of Learning (mixed queue, reveal, 1/2/3, edit,
 suspend, delete), the schedule, flagged cards, "N cards due" on Home. Check: a day's due cards
 cleared to zero in the window; a thrice-failed card appears in the next session's brief.

@@ -155,3 +155,15 @@ def test_a_run_submits_only_at_night_and_marks_the_chat_read_when_applied(conn, 
     rep = N.run(conn, now=NIGHT, submit_new=False)
     assert rep.collected == 1 and rep.applied.observations == 1
     assert N.sessions_to_read(conn, now=NIGHT) == []
+
+
+def test_a_card_with_a_stray_moment_takes_the_kind_of_the_moment_it_quotes(conn):
+    """24 Nov, the first real run: the model wrote "timed problem (d)" as the moment."""
+    _turn(conn, "s", "u1", "you", "these two objects are the same", T0, LEARN)
+    raw = _reply(obs=[{"goal": "cpp-oxdaq", "track": "python-data-model", "kind": "wrong", "text": "is vs ==",
+                       "quote": "these two objects are the same"}],
+                 cards=[{"goal": "cpp-oxdaq", "track": "python-data-model", "moment": "timed problem (d)",
+                         "quote": "these two objects are the same", "prompt": "Is k1 is k2 True?", "answer": "No."}])
+    a = N.apply(conn, "s", 0, raw, default_goal=None)
+    assert a.cards == 1 and not a.refused
+    assert conn.execute("SELECT moment FROM cards").fetchone()[0] == "wrong"

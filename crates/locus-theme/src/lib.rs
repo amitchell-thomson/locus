@@ -79,10 +79,11 @@ pub fn c(name: &str) -> Color {
     Color::Rgb(r, g, b)
 }
 
-/// Blend a colour towards the background, `base` (0 = unchanged, 1 = base).
+/// Blend a colour towards the terminal background, `bg` (0 = unchanged, 1 = the background):
+/// what is really behind every transparent app, so a faded colour matches what is on screen.
 pub fn fade(col: Color, t: f32) -> Color {
     let t = t.clamp(0.0, 1.0);
-    let Color::Rgb(br, bg, bb) = c("base") else { return col };
+    let Color::Rgb(br, bg, bb) = c("bg") else { return col };
     match col {
         Color::Rgb(r, g, b) => {
             let m = |a: u8, z: u8| (f32::from(a) + (f32::from(z) - f32::from(a)) * t).round() as u8;
@@ -219,8 +220,10 @@ mod tests {
     }
 
     #[test]
-    fn fade_ends_at_base() {
-        assert_eq!(fade(c("red"), 1.0), c("base"));
+    fn fade_ends_at_the_terminal_background() {
+        // the real background (Ghostty's), not Mocha's base, which is never on screen
+        assert_eq!(fade(c("red"), 1.0), c("bg"));
+        assert_eq!(c("bg"), Color::Rgb(0x28, 0x2c, 0x34));
         assert_eq!(fade(c("red"), 0.0), c("red"));
     }
 }

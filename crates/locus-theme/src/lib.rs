@@ -8,7 +8,10 @@
 
 pub mod glyph;
 pub mod keys;
+pub mod palette;
 pub mod rebuilt;
+
+pub use palette::{follow_theme, follow_theme_at};
 
 /// Keys that mean the same thing in every app (L4): `d` is done, `x` removes (asking first),
 /// `+` adds, `esc` goes back, `/` searches, `?` shows the keys. Each app's key lists are tested
@@ -66,17 +69,17 @@ pub const MOCHA: &[(&str, (u8, u8, u8))] = &[
     ("crust", (0x11, 0x11, 0x1b)),
 ];
 
-/// A Mocha colour by name. Unknown names fall back to `text`, never panic: a typo in a
+/// A colour by its Catppuccin name: Mocha's, or the current scheme's in an app that called
+/// [`follow_theme`] (see `palette`). Unknown names fall back to `text`, never panic: a typo in a
 /// config should look wrong, not crash the window.
 pub fn c(name: &str) -> Color {
-    let (r, g, b) = MOCHA
-        .iter()
-        .find(|(n, _)| n.eq_ignore_ascii_case(name))
-        .map_or((0xcd, 0xd6, 0xf4), |(_, rgb)| *rgb);
+    let (r, g, b) = palette::lookup(name)
+        .or_else(|| palette::lookup("text"))
+        .unwrap_or((0xcd, 0xd6, 0xf4));
     Color::Rgb(r, g, b)
 }
 
-/// Blend a colour towards the Mocha base (0 = unchanged, 1 = base).
+/// Blend a colour towards the background, `base` (0 = unchanged, 1 = base).
 pub fn fade(col: Color, t: f32) -> Color {
     let t = t.clamp(0.0, 1.0);
     let Color::Rgb(br, bg, bb) = c("base") else { return col };

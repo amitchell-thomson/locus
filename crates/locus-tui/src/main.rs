@@ -71,6 +71,8 @@ struct Cli {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    // Colours from the current scheme (`theme`, ~/local-projects/taxis), live; Mocha if none.
+    locus_theme::follow_theme();
     if cli.use_report {
         let path = uselog::default_path().context("no HOME to find the use log under")?;
         let text = std::fs::read_to_string(&path).unwrap_or_default();

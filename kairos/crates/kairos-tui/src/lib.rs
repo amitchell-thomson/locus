@@ -96,6 +96,8 @@ fn spawn_sync(cfg: &Config, done: mpsc::Sender<()>) {
 }
 
 pub fn run(cfg: Config, path: PathBuf) -> Result<(), String> {
+    // Colours from the current scheme (`theme`, ~/local-projects/taxis), live; Mocha if none.
+    locus_theme::follow_theme();
     // KAIROS_NOW=2026-10-12T09:40:00+01:00 previews the TUI at another time
     // (the clock keeps running from there). Display only; writes are real.
     let skew = std::env::var("KAIROS_NOW")

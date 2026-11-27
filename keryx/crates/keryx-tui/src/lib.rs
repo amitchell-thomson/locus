@@ -119,6 +119,8 @@ pub fn run(cfg: Config) -> Result<(), String> {
 
 /// The TUI, opened on a thread (`keryx open keryx://thread/…`).
 pub fn run_at(cfg: Config, thread: Option<(String, String)>) -> Result<(), String> {
+    // Colours from the current scheme (`theme`, ~/local-projects/taxis), live; Mocha if none.
+    locus_theme::follow_theme();
     // After a rebuild took over the window (C7), the thread that was on screen.
     let thread = thread.or_else(|| {
         let r = std::env::var(rebuilt::ENV_THREAD).ok()?;

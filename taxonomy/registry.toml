@@ -56,6 +56,18 @@ depth = "design"
 sessions = ["locus-dev", "kairos", "keryx"]
 components = [{ name = "locus", repo = "locus" }, { name = "kairos (calendar)", repo = "kairos" }, { name = "keryx (mail)", repo = "keryx" }]
 
+# The desktop as one system (27 Nov 2026, was taxis): the taxis daemon, theme, the rice spec.
+[[projects]]
+id = "kosmos"
+name = "kosmos"
+folder = "kosmos"
+area = "Projects"
+kind = "repo"
+state = "live"
+active = true
+depth = "design"
+sessions = ["kosmos"]
+
 [[projects]]
 id = "oqts"
 name = "OQTS"
